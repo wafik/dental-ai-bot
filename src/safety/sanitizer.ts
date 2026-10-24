@@ -17,7 +17,7 @@ const PROMPT_INJECTION_PATTERNS = [
 ];
 
 const MEDICAL_ADVICE_PATTERNS = [
-  /\b(diagnose|prescription|prescribe|prescriptions|antibiotics|medication|dosage)\b/i,
+  /\b(diagnose|diagnosis|prescription|prescribe|prescriptions|antibiotics|medication|dosage|cancer|tumor)\b/i,
   /\b(what\s+medication\s+should\s+i\s+take)\b/i,
   /\b(is\s+it\s+cancer|am\s+i\s+dying)\b/i,
   /\b(diagnose\s+my)\b/i,

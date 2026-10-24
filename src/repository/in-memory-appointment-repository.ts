@@ -12,6 +12,23 @@ export class InMemoryAppointmentRepository implements AppointmentRepository {
   private readonly records = new Map<string, AppointmentRecord>();
 
   async create(record: AppointmentRecord): Promise<AppointmentRecord> {
+    if (record.status === "confirmed") {
+      for (const existing of this.records.values()) {
+        if (
+          existing.dentistId === record.dentistId &&
+          existing.date === record.date &&
+          existing.status === "confirmed"
+        ) {
+          // Check for overlapping intervals
+          if (record.startTime < existing.endTime && record.endTime > existing.startTime) {
+            throw new Error(
+              `Slot conflict: Dentist '${record.dentistId}' already has a confirmed booking from ${existing.startTime} to ${existing.endTime} on ${record.date}.`,
+            );
+          }
+        }
+      }
+    }
+
     const clone: AppointmentRecord = { ...record };
     this.records.set(clone.id, clone);
     return { ...clone };

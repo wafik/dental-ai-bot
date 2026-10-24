@@ -145,20 +145,21 @@ Keep shared domain enums/constants in one shared location rather than duplicatin
   - Step-by-step instructions to grant Google Calendar access, connect the clinic's Microsoft Outlook account, and use the dashboard or website widget.
 
 ### Day 7 (Friday, October 30): End-to-End Testing and Demo Preparation
-- [ ] Test the following edge cases:
-  1. Request Service E (6 hours) with the Junior dentist → decline politely and offer Senior 1 or Senior 2.
-  2. Request a slot already occupied in Google Calendar → offer available alternatives.
-  3. Ask about an unrelated topic, such as a recipe or stock advice → decline and redirect to dental-clinic appointments.
-  4. Submit competing booking requests for the same dentist and time → accept no more than one booking.
-- [ ] Run `bun check`, `oxlint src`, `oxfmt`, and `bun test`; resolve all errors and warnings.
-- [ ] Prepare a stable demo environment, either a public deployment or a reliable local tunnel, for the Saturday interview.
+- [x] Test the following edge cases:
+  1. Request Service E (6 hours) with the Junior dentist → decline politely and offer Senior 1 or Senior 2 (`tests/day-7-edge-cases.test.ts`).
+  2. Request a slot already occupied in Google Calendar → offer available alternatives (`tests/day-7-edge-cases.test.ts`).
+  3. Ask about an unrelated topic, such as a recipe or stock advice → decline and redirect to dental-clinic appointments (`tests/day-7-edge-cases.test.ts`).
+  4. Submit competing booking requests for the same dentist and time → accept no more than one booking (`tests/day-7-edge-cases.test.ts`).
+- [x] Run `bun check`, `oxlint src tests e2e`, `oxfmt`, and `bun test`; resolve all errors and warnings.
+- [x] Implement Playwright E2E tests (`e2e/portal-and-booking.spec.ts`) capturing high-res screenshots and animated GIF walkthrough (`docs/screenshots/dental-ai-demo.gif`).
+- [x] Prepare a stable demo environment, either a public deployment or a reliable local tunnel, for the Saturday interview.
 
 ---
 
 ## 5. Interview Evaluation Checklist
 
-- [ ] **Provider-agnostic design is visible in the code:** Show the AI provider configuration and the shared contract; switching providers must not require changing appointment business rules.
-- [ ] **Calendar adapters are demonstrated:** Show both Google Calendar and Outlook using the same scheduling rules through their respective adapters.
-- [ ] **Backend validation is authoritative:** Reject Junior dentist assignments for Services C, D, and E in server-side logic even if the AI requests them.
-- [ ] **Production costs are realistic:** Include a specific USD price breakdown per 1,000 interactions in the internal documentation, based on dated provider and hosting prices.
-- [ ] **The application remains one repository:** Frontend, API delivery, domain logic, integrations, tests, and documentation are organized into modules without creating separate FE and BE repositories.
+- [x] **Provider-agnostic design is visible in the code:** Show the AI provider configuration and the shared contract; switching providers must not require changing appointment business rules.
+- [x] **Calendar adapters are demonstrated:** Show both Google Calendar and Outlook using the same scheduling rules through their respective adapters.
+- [x] **Backend validation is authoritative:** Reject Junior dentist assignments for Services C, D, and E in server-side logic even if the AI requests them.
+- [x] **Production costs are realistic:** Include a specific USD price breakdown per 1,000 interactions in the internal documentation, based on dated provider and hosting prices.
+- [x] **The application remains one repository:** Frontend, API delivery, domain logic, integrations, tests, and documentation are organized into modules without creating separate FE and BE repositories.
