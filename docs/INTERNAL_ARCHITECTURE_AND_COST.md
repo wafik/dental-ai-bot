@@ -1,0 +1,215 @@
+# Internal Architecture, Technical Decisions, and Financial Cost Analysis
+
+**Target Role:** Forward Deployment Engineer — Functional AI Solutions  
+**Project:** AI-Driven Dental Appointment Booking System (Voice + Chat + Multi-Calendar)  
+**Date:** October 2026  
+**Status:** Production-Ready Reference Architecture
+
+---
+
+## 1. Executive Summary & Architecture Overview
+
+The Dental Clinic Conversational AI platform provides an enterprise-grade, omnichannel patient scheduling solution. Patients can book, inquire, reschedule, and verify dental appointments through two-way natural voice calls (WebRTC) and text chat.
+
+The architecture enforces strict clinical safety guardrails, provider-agnostic modularity, authoritative backend validation, and bidirectional calendar synchronization with both Google Calendar and Microsoft 365 Outlook.
+
+### High-Level System Architecture Diagram
+
+```mermaid
+flowchart TB
+    subgraph ClientLayer [Client Presentation Layer]
+        WebBrowser["Patient Browser (Desktop / Mobile)"]
+        VoiceWidget["WebRTC Voice Client (Opus Audio)"]
+        ChatWidget["Chat UI (Next.js 16 + React 19)"]
+        ScheduleDash["Live Schedule Matrix Dashboard"]
+        WebBrowser --> VoiceWidget
+        WebBrowser --> ChatWidget
+        WebBrowser --> ScheduleDash
+    end
+
+    subgraph SecurityLayer [Edge & Security Guardrails]
+        RateLimiter["Sliding Window Rate Limiter (IP Tracked)"]
+        Sanitizer["Prompt Injection & Medical Guardrails"]
+        TokenIssuer["Ephemeral WebRTC Token Gate (/api/v1/voice/session)"]
+    end
+
+    subgraph AppRouter [Next.js App Router API Delivery]
+        APIChat["POST /api/v1/chat"]
+        APIVoiceSession["POST /api/v1/voice/session"]
+        APIVoiceTools["POST /api/v1/voice/tools"]
+        APIAppointments["GET/POST /api/v1/appointments"]
+    end
+
+    subgraph CoreEngine [Core Domain & Scheduling Engine]
+        ChatOrch["Chat Orchestrator"]
+        VoiceManager["Voice Session Manager"]
+        ApptService["AppointmentService (Authoritative Business Rules)"]
+        SlotFinder["Slot Finder & Qualification Validator"]
+        ClinicDomain["Domain Models (3 Dentists, 5 Services)"]
+        
+        ApptService --> SlotFinder
+        SlotFinder --> ClinicDomain
+    end
+
+    subgraph PersistenceLayer [Persistence & Synchronization Layer]
+        Repository["Appointment Repository (Drizzle ORM / InMemory)"]
+        PostgresDB[(PostgreSQL Database / Neon / Supabase)]
+        Repository --> PostgresDB
+        
+        CalendarContract["CalendarProvider (Shared Contract)"]
+        GoogleAdapter["GoogleCalendarAdapter (OAuth Refresh + FreeBusy)"]
+        OutlookAdapter["OutlookCalendarAdapter (MS Graph + calendarView)"]
+        
+        CalendarContract --> GoogleAdapter
+        CalendarContract --> OutlookAdapter
+    end
+
+    subgraph CloudAPIs [External Cloud Infrastructure]
+        OpenAICloud["OpenAI Realtime / LLM API"]
+        GoogleCloud["Google Calendar API v3"]
+        MicrosoftCloud["Microsoft Entra ID / Microsoft Graph"]
+    end
+
+    %% Wiring
+    ChatWidget --> RateLimiter --> Sanitizer --> APIChat --> ChatOrch
+    VoiceWidget -- "1. Get Ephemeral Token" --> TokenIssuer --> APIVoiceSession --> OpenAICloud
+    VoiceWidget -- "2. Direct WebRTC Media" --> OpenAICloud
+    VoiceWidget -- "3. Tool Call via DataChannel" --> APIVoiceTools --> ApptService
+    ChatOrch --> ApptService
+    
+    ApptService --> Repository
+    ApptService --> CalendarContract
+    
+    GoogleAdapter --> GoogleCloud
+    OutlookAdapter --> MicrosoftCloud
+```
+
+---
+
+## 2. Technical Decisions & Trade-Off Matrix
+
+### 2.1 Provider-Agnostic AI & Voice Integration
+
+* **Decision:** Implement decoupled contracts (`LLMProvider` and `VoiceProvider`) with standalone adapter implementations.
+* **Why:** Prevents vendor lock-in. While OpenAI Realtime is implemented as the primary WebRTC engine, switching to Gemini Live, ElevenLabs Conversational, Deepgram, or Vapi requires only introducing an adapter conforming to the interface without touching clinical scheduling logic.
+* **Security Guard:** Never expose master API keys to client browsers. The server issues a short-lived ephemeral session token (`client_secret.value`) via `/api/v1/voice/session` with an expiry window of under 60 seconds.
+
+### 2.2 Dual-Calendar Parity (Google Calendar + Microsoft Outlook)
+
+* **Decision:** Design a unified `CalendarProvider` interface with RFC3339 UTC normalization (`YYYY-MM-DDTHH:mm:ssZ`).
+* **Why:** Clinics run heterogeneous software stacks. Private practices commonly use Google Workspace, whereas hospital-affiliated clinics standardize on Microsoft 365 / Entra ID.
+* **Implementation Highlights:**
+  * **Google Calendar:** Uses OAuth 2.0 refresh token rotation, in-memory bearer token caching with proactive refresh (5 minutes prior to expiration), and Freebusy API queries (`calendar.freebusy.query`).
+  * **Microsoft Outlook:** Connects to Microsoft Graph `/v1.0/users/{dentist}/calendarView`, handles multi-page `@odata.nextLink` pagination, and converts Microsoft's un-suffixed UTC strings into canonical ISO strings.
+* **Failure Isolation:** Errors from calendar APIs are wrapped in a redacted `CalendarProviderError`, preventing raw stack traces or leaked tokens from reaching application logs.
+
+### 2.3 Authoritative Server-Side Validation
+
+* **Decision:** Never rely on the LLM's system prompt to enforce clinical qualifications or double-booking prevention.
+* **Why:** LLMs are probabilistic engines vulnerable to conversational jailbreaking, hallucinations, or prompt injection.
+* **Enforcement:** The backend `AppointmentService` authoritatively rejects:
+  * Junior dentist bookings for Service C (Root Canal, 2.5h), Service D (Crown/Veneer, 2h), and Service E (Full Mouth Implant Surgery, 6h).
+  * Bookings outside clinic working hours (09:00–17:00).
+  * Time slots that conflict with existing database records or external calendar busy intervals.
+  * Overlapping bookings using atomic database transactions.
+
+---
+
+## 3. Workload Assumptions & Monthly Financial Cost Analysis
+
+### 3.1 Workload Model
+
+To provide a concrete, realistic financial forecast for an active dental clinic, we model the following monthly workload:
+
+| Metric | Monthly Volume | Notes |
+| :--- | :--- | :--- |
+| **Spoken Voice Calls** | 1,000 calls / month | Average duration: 3.0 minutes (180 seconds) per call |
+| **Total Spoken Audio** | 3,000 minutes / month | 1,000 calls × 3 minutes |
+| **Text Chat Sessions** | 3,000 chats / month | Average 5 conversation turns per chat |
+| **Total Chat Turns** | 15,000 turns / month | 3,000 chats × 5 turns |
+| **Confirmed Bookings** | ~650 appointments / mo | Resulting in calendar synchronization events |
+
+---
+
+### 3.2 Itemized Monthly Cost Breakdown
+
+#### A. Conversational Voice AI (OpenAI Realtime API / WebRTC)
+*Audio inputs and outputs billed per minute / token equivalent (rates as of Q3/Q4 2026):*
+* **Realtime Audio Input:** $0.06 / minute × 3,000 minutes = **$180.00**
+* **Realtime Audio Output:** $0.24 / minute × 1,500 minutes (assistant speaks ~50% of call time) = **$360.00**
+* **Text Tokens (Function Calling / Context):** ~1.5M tokens/mo = **$15.00**
+* *Subtotal Voice:* **$555.00 / month**
+
+#### B. Text Chat AI (GPT-4o-mini / Claude 3.5 Haiku)
+*Text conversational model with prompt caching:*
+* **Average Input per Turn:** 1,200 tokens (System prompt + guardrails + conversation history)
+* **Average Output per Turn:** 150 tokens
+* **Total Monthly Inputs:** 15,000 turns × 1,200 tokens = 18,000,000 tokens @ $0.15 / 1M tokens = **$2.70**
+* **Total Monthly Outputs:** 15,000 turns × 150 tokens = 2,250,000 tokens @ $0.60 / 1M tokens = **$1.35**
+* *Subtotal Chat:* **$4.05 / month**
+
+#### C. Cloud Application Hosting & Edge Routing
+*Serverless Next.js App Router deployment (Vercel Pro or AWS ECS Fargate container):*
+* **Vercel Pro Plan:** $20.00 / seat / month
+* **Serverless Function Executions & Bandwidth:** ~150,000 requests / month (well within standard quota)
+* *Subtotal Hosting:* **$20.00 / month**
+
+#### D. Database Persistence (PostgreSQL Managed Instance)
+*Managed PostgreSQL with automated backups and connection pooling (Neon Serverless Postgres / Supabase / AWS RDS):*
+* **Compute:** 0.5 vCPU shared compute with autoscaling to 2 vCPU
+* **Storage:** 10 GB SSD with daily automated snapshots
+* *Subtotal Database:* **$15.00 / month**
+
+#### E. Calendar APIs & External Services
+*Google Cloud Platform & Microsoft Entra ID:*
+* **Google Calendar API v3:** Free tier covers up to 1,000,000 queries/day. Cost: **$0.00**
+* **Microsoft Graph API:** Included with Microsoft 365 Business basic/standard seat. Cost: **$0.00**
+* **Domain & SSL / Cloudflare DNS Protection:** **$5.00 / month**
+* *Subtotal External Services:* **$5.00 / month**
+
+---
+
+### 3.3 Total Financial Summary & Unit Economics
+
+| Category | Monthly Cost (USD) | Share of Total |
+| :--- | :--- | :--- |
+| **Conversational Voice AI (3,000 min)** | $555.00 | 92.6% |
+| **Text Chat LLM (15,000 turns)** | $4.05 | 0.7% |
+| **Application Hosting (Next.js / Edge)** | $20.00 | 3.3% |
+| **PostgreSQL Database** | $15.00 | 2.5% |
+| **Calendar APIs & Infrastructure** | $5.00 | 0.8% |
+| **TOTAL ESTIMATED MONTHLY COST** | **$599.05** | **100.0%** |
+
+#### Unit Cost Analysis:
+* **Cost per Voice Call (3 minutes):** **$0.56 per call**
+* **Cost per Text Chat Session (5 turns):** **$0.0014 per chat**
+* **Cost per Confirmed Booking (~650 bookings):** **$0.92 per patient booked**
+
+*Comparison with Human Staffing:*  
+A full-time dental receptionist in the US/UK costs between $3,000 and $4,500/month for 40 hours/week. The AI solution operates **24/7/365 with zero hold times, handles concurrent callers, and costs less than 20% of a single human receptionist.**
+
+---
+
+## 4. Security, Compliance & Patient Privacy
+
+### 4.1 HIPAA & GDPR Alignment
+1. **Zero Secret Leakage:** Master API keys, OAuth client secrets, and refresh tokens are stored exclusively in server environment variables and never exposed to the client bundle.
+2. **Business Associate Agreements (BAA):** For clinical HIPAA compliance, clinic deployments must execute an enterprise BAA with:
+   * OpenAI (Enterprise zero-data-retention tier)
+   * Cloud hosting provider (AWS or Vercel Enterprise)
+   * Database provider (AWS RDS / Supabase HIPAA add-on)
+3. **Data Minimization:** Audio streams transmitted over WebRTC are ephemeral and processed in-memory. Conversations are not written to persistent storage unless explicit consent is logged.
+
+### 4.2 Medical Guardrails & Scope Limitation
+* **Strict Deflection:** Inquiries attempting to elicit dental diagnoses, prescription advice, antibiotic dosages, or emergency triage trigger automatic deflection:
+  > *"I am an automated appointment scheduling assistant and cannot provide dental diagnoses or prescribe medications. Please consult with our licensed dentists during your appointment, or visit an urgent care center if you are experiencing severe pain or bleeding."*
+* **Prompt Injection Defenses:** The input sanitizer intercepts jailbreak attempts (`DAN`, `ignore previous instructions`, `system prompt leak`) before forwarding queries to the LLM.
+
+---
+
+## 5. Failure Recovery & Concurrency Handling
+
+1. **Race Conditions & Double-Booking:** When two patients request the same dentist and time slot simultaneously:
+   * The database enforces a unique constraint / row lock on `(dentist_id, appointment_date, start_time)`.
+   * Only one transaction succeeds; the second receives an explicit conflict error and the assistant immediately offers the next nearest available slot.
+2. **Calendar Provider Downtime:** If Google or Outlook returns HTTP 503 or network timeouts, the system records the booking in the PostgreSQL database with status `pending_sync`, logs an audit incident, and schedules background reconciliation.
