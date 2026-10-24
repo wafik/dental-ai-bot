@@ -41,6 +41,7 @@ The system supports **3 dentists** and **5 services**, each with a defined durat
 - **Frontend:** Next.js **16.4.3** with the App Router and React **19.3.1**.
 - **Styling:** Tailwind CSS **4.3.3**.
 - **UI components:** shadcn/ui; the latest CLI version checked for this plan is **4.22.1**. Run the CLI from the repository root with `bunx --bun shadcn@latest`. Add only the components the app needs, and prefer shadcn/ui components over custom equivalents.
+- **UI and forms:** Use a reusable toast API for feedback, a reusable searchable select for dropdowns, and a show/hide eye toggle for password fields. Validate forms with Zod and show validation feedback in real time as users edit.
 - **Type checking, linting, and formatting:** `bun check`, `oxlint`, and `oxfmt`. Keep lint output free of warnings and errors.
 - **Repository:** One repository contains the Next.js frontend, API delivery layer, domain logic, integrations, tests, and documentation.
 
@@ -102,20 +103,27 @@ Keep shared domain enums/constants in one shared location rather than duplicatin
 ## 4. Seven-Day Implementation Schedule (October 24–30, 2026)
 
 ### Day 1 (Saturday, October 24): Domain Rules and Scheduling Engine
-- [ ] Initialize the single repository with the runtime, Next.js, Tailwind CSS, and shadcn/ui setup described above.
-- [ ] Define the dentist and service rules for all 3 dentists and 5 services.
-- [ ] Implement and test a slot finder that checks clinic hours, existing appointments, dentist eligibility, and the full service duration. Service E must require 6 consecutive available hours with Senior 1 or Senior 2.
+- [x] Initialize the single repository with the runtime, Next.js, Tailwind CSS, and shadcn/ui setup described above.
+- [x] Define the dentist and service rules for all 3 dentists and 5 services.
+- [x] Implement and test a slot finder that checks clinic hours, existing appointments, dentist eligibility, and the full service duration. Service E must require 6 consecutive available hours with Senior 1 or Senior 2.
 
 ### Day 2 (Sunday, October 25): Google Calendar and Outlook Integration
-- [ ] Set up a Google Cloud project and the required OAuth/service-account access; create a separate calendar for each dentist.
-- [ ] Set up Microsoft Entra ID and Microsoft Graph calendar access with the required `Calendars.ReadWrite` permission.
-- [ ] Test free/busy reads and event creation against both calendar providers.
+- [x] Define provider-neutral `CalendarProvider` contract with `getBusyIntervals` and `createEvent`, custom `CalendarProviderError`, and strict RFC3339 interval normalization (`src/providers/calendar/`).
+- [x] Implement runtime environment configuration for Google Calendar and Microsoft Graph with per-dentist mappings and `.env.example` template (`src/config/calendar.ts`).
+- [x] Implement `GoogleCalendarAdapter` with OAuth refresh token exchange, in-memory token caching, Freebusy queries, and event creation, verified with mocked HTTP tests (`tests/google-calendar-adapter.test.ts`).
+- [x] Implement `OutlookCalendarAdapter` with Microsoft Entra OAuth refresh, calendarView queries, multi-page `@odata.nextLink` pagination, and event creation, verified with mocked HTTP tests (`tests/outlook-calendar-adapter.test.ts`).
+- [x] Verify provider parity with contract compliance tests (`tests/calendar-contract.test.ts`).
+- [x] Document external cloud provisioning, OAuth scope requirements, and token lifecycle in `docs/CALENDAR_SETUP.md`.
+- [ ] External cloud setup: Provision Google Cloud project, OAuth consent, and 3 dentist calendars (pending operator credentials).
+- [ ] External cloud setup: Register Microsoft Entra ID application and grant delegated `Calendars.ReadWrite` permission (pending operator credentials).
+- [ ] Live integration testing: Execute end-to-end free/busy and event creation against live Google and Microsoft accounts once external credentials are provided.
 
 ### Day 3 (Monday, October 26): Chat AI and Tool Calling
-- [ ] Write the English system prompt and define the dental-appointment scope guardrails.
-- [ ] Decline requests outside clinic appointment services and reject Services C, D, and E when a user requests the Junior dentist.
-- [ ] Connect the AI provider to the shared availability and appointment-booking tools.
-- [ ] Validate all tool inputs and business rules in backend services; do not rely on the model prompt as enforcement.
+- [x] Write the English system prompt and define the dental-appointment scope guardrails (`src/safety/system-prompt.ts`, `tests/system-prompt-guardrails.test.ts`).
+- [x] Decline requests outside clinic appointment services and reject Services C, D, and E when a user requests the Junior dentist.
+- [x] Connect the AI provider to the shared availability and appointment-booking tools (`src/services/appointment-tools.ts`, `src/services/chat-orchestrator.ts`).
+- [x] Validate all tool inputs and business rules in backend services; do not rely on the model prompt as enforcement (`src/services/appointment-service.ts`, `tests/appointment-service.test.ts`).
+- [x] Implement PostgreSQL schema and repository using Drizzle ORM (`src/repository/schema.ts`, `DrizzleAppointmentRepository`, `InMemoryAppointmentRepository`).
 
 ### Day 4 (Tuesday, October 27): Conversational Voice AI
 - [ ] Implement real-time browser voice conversation using the selected provider's supported browser transport (for example, WebRTC or WebSocket).
