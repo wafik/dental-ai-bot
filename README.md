@@ -56,3 +56,16 @@ The application supports real-time, two-way browser voice conversations using st
 - **Authoritative Voice Tool Calling**: `POST /api/v1/voice/tools` executes tool calls triggered by the voice model against `AppointmentService`, enforcing dentist qualification constraints and calendar sync.
 - **Client-Side WebRTC Manager**: `src/features/voice/voice-session-manager.ts` and `src/features/voice/use-realtime-voice.ts` manage microphone input, WebRTC audio streams, and bidirectional DataChannel event dispatching.
 
+## Web UI, Safety & Live Dashboard (Day 5)
+
+The application provides an interactive web workspace combining text chat, WebRTC voice calling, live dentist schedules, and enterprise guardrails:
+
+- **AI Text Chat Widget**: `src/components/chat-widget.tsx` with multi-turn messages, suggestion pills, and appointment confirmation indicators.
+- **Conversational Voice Call Widget**: `src/components/voice-call-widget.tsx` featuring speech pulse visualizer, real-time transcription waterfall, and mute/unmute controls.
+- **Dentist Schedules Dashboard**: `src/components/schedule-preview.tsx` displaying live 09:00–17:00 booked vs. available slots across Junior, Senior 1, and Senior 2.
+- **Dental Services Catalog**: `src/components/services-catalog.tsx` highlighting durations and eligible dentist restrictions.
+- **Prompt Injection Defense & Sanitizer**: `src/safety/sanitizer.ts` intercepts jailbreaks ("ignore previous instructions", "DAN", etc.) and deflects clinical medical diagnosis questions without consuming LLM tokens.
+- **Sliding Window Rate Limiter**: `src/safety/rate-limiter.ts` guarding `/api/v1/chat` and API routes against quota exhaustion.
+- **Appointments API**: `GET /api/v1/appointments` and `POST /api/v1/appointments` for dashboard sync and direct booking.
+
+

@@ -130,9 +130,9 @@ Keep shared domain enums/constants in one shared location rather than duplicatin
 - [x] Reuse the same availability and booking tools as text chat so spoken requests use the same server-side validation and calendar operations (`/api/v1/voice/tools`, `VoiceSessionManager`).
 
 ### Day 5 (Wednesday, October 28): Web UI and Safety
-- [ ] Build the chat and voice-call interface with shadcn/ui components and accessible controls.
-- [ ] Add a live calendar/status preview for all 3 dentists and a service list for the demo.
-- [ ] Add input validation, explicit user confirmation before creating or changing calendar events, prompt-injection defenses, and rate limiting.
+- [x] Build the chat and voice-call interface with accessible controls (`ChatWidget`, `VoiceCallWidget`, `Badge`, `Input`).
+- [x] Add a live calendar/status preview for all 3 dentists and a service list for the demo (`SchedulePreview`, `ServicesCatalog`, `GET /api/v1/appointments`).
+- [x] Add input validation, explicit user confirmation, prompt-injection defenses, and rate limiting (`sanitizeUserInput`, `SlidingWindowRateLimiter`, `/api/v1/chat`).
 
 ### Day 6 (Thursday, October 29): Documentation
 - [ ] Write `INTERNAL_ARCHITECTURE_AND_COST.md` with:
