@@ -49,15 +49,33 @@ function toTime(minutes: number): string {
   return `${hours}:${mins}`;
 }
 
+class NoopCalendarProvider implements CalendarProvider {
+  async getBusyIntervals(): Promise<never[]> {
+    return [];
+  }
+  async createEvent(input: {
+    start: string;
+    end: string;
+  }): Promise<{ id: string; start: string; end: string }> {
+    return {
+      id: `local-evt-${Date.now()}`,
+      start: input.start,
+      end: input.end,
+    };
+  }
+}
+
 export class AppointmentService {
+  private readonly calendarProvider: CalendarProvider;
   private readonly workingHours: WorkingHours;
   private readonly timeZone: string;
 
   constructor(
     private readonly repository: AppointmentRepository,
-    private readonly calendarProvider: CalendarProvider,
+    calendarProvider?: CalendarProvider,
     config?: AppointmentServiceConfig,
   ) {
+    this.calendarProvider = calendarProvider ?? new NoopCalendarProvider();
     this.workingHours = config?.workingHours ?? DEFAULT_WORKING_HOURS;
     this.timeZone = config?.timeZone ?? DEFAULT_CLINIC_TIMEZONE;
   }

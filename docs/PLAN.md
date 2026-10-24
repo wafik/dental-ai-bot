@@ -126,8 +126,8 @@ Keep shared domain enums/constants in one shared location rather than duplicatin
 - [x] Implement PostgreSQL schema and repository using Drizzle ORM (`src/repository/schema.ts`, `DrizzleAppointmentRepository`, `InMemoryAppointmentRepository`).
 
 ### Day 4 (Tuesday, October 27): Conversational Voice AI
-- [ ] Implement real-time browser voice conversation using the selected provider's supported browser transport (for example, WebRTC or WebSocket).
-- [ ] Reuse the same availability and booking tools as text chat so spoken requests use the same server-side validation and calendar operations.
+- [x] Implement real-time browser voice conversation using the selected provider's supported browser transport (WebRTC with ephemeral session token via `/api/v1/voice/session`).
+- [x] Reuse the same availability and booking tools as text chat so spoken requests use the same server-side validation and calendar operations (`/api/v1/voice/tools`, `VoiceSessionManager`).
 
 ### Day 5 (Wednesday, October 28): Web UI and Safety
 - [ ] Build the chat and voice-call interface with shadcn/ui components and accessible controls.
