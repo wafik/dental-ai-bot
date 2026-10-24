@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, varchar } from "drizzle-orm/pg-core";
+import { boolean, pgTable, text, timestamp, varchar } from "drizzle-orm/pg-core";
 
 /**
  * PostgreSQL appointments table schema defined via Drizzle ORM.
@@ -21,3 +21,34 @@ export const appointments = pgTable("appointments", {
 
 export type AppointmentRow = typeof appointments.$inferSelect;
 export type InsertAppointmentRow = typeof appointments.$inferInsert;
+
+/**
+ * PostgreSQL clinic dynamic configuration settings table.
+ * Used for storing operational settings (e.g. active calendar provider, working hours).
+ */
+export const clinicSettings = pgTable("clinic_settings", {
+  key: varchar("key", { length: 64 }).primaryKey(),
+  value: text("value").notNull(),
+  description: text("description"),
+  updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+});
+
+export type ClinicSettingRow = typeof clinicSettings.$inferSelect;
+export type InsertClinicSettingRow = typeof clinicSettings.$inferInsert;
+
+/**
+ * PostgreSQL dentist calendar mapping table.
+ * Maps dentists to their specific Google or Outlook calendar IDs.
+ */
+export const dentistCalendarMappings = pgTable("dentist_calendar_mappings", {
+  id: varchar("id", { length: 36 }).primaryKey(),
+  dentistId: varchar("dentist_id", { length: 32 }).notNull(),
+  provider: varchar("provider", { length: 16 }).notNull(), // "google" | "outlook"
+  calendarId: text("calendar_id").notNull(),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+});
+
+export type DentistCalendarMappingRow = typeof dentistCalendarMappings.$inferSelect;
+export type InsertDentistCalendarMappingRow = typeof dentistCalendarMappings.$inferInsert;
