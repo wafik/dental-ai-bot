@@ -135,12 +135,12 @@ Keep shared domain enums/constants in one shared location rather than duplicatin
 - [x] Add input validation, explicit user confirmation, prompt-injection defenses, and rate limiting (`sanitizeUserInput`, `SlidingWindowRateLimiter`, `/api/v1/chat`).
 
 ### Day 6 (Thursday, October 29): Documentation
-- [ ] Write `INTERNAL_ARCHITECTURE_AND_COST.md` with:
+- [x] Write `INTERNAL_ARCHITECTURE_AND_COST.md` with:
   - A Mermaid architecture diagram showing the shared AI provider contract and the Google/Outlook calendar adapters.
   - A concrete monthly estimate using an explicit workload assumption (for example, 1,000 calls/month averaging 3 minutes plus 3,000 chats), itemized by AI, speech/voice, hosting, and database costs.
   - Trade-offs and decisions for provider adapters, concurrent booking prevention, and voice latency.
   - Scope guardrails, patient-data protection considerations (HIPAA/GDPR awareness), and server-side tool-call validation.
-- [ ] Write `EXTERNAL_CLIENT_GUIDE.md` with:
+- [x] Write `EXTERNAL_CLIENT_GUIDE.md` with:
   - A plain-language description of the product's business value for a dental-clinic owner.
   - Step-by-step instructions to grant Google Calendar access, connect the clinic's Microsoft Outlook account, and use the dashboard or website widget.
 
