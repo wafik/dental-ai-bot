@@ -205,6 +205,22 @@ A full-time dental receptionist in the US/UK costs between $3,000 and $4,500/mon
   > *"I am an automated appointment scheduling assistant and cannot provide dental diagnoses or prescribe medications. Please consult with our licensed dentists during your appointment, or visit an urgent care center if you are experiencing severe pain or bleeding."*
 * **Prompt Injection Defenses:** The input sanitizer intercepts jailbreak attempts (`DAN`, `ignore previous instructions`, `system prompt leak`) before forwarding queries to the LLM.
 
+### 4.3 Production Settings & Secrets Management (Database vs Environment Variables)
+
+In production enterprise deployments, configuration and credentials are bifurcated between **Cloud Secrets Management** and the **PostgreSQL Database**:
+
+| Setting / Credential | Storage Tier | Storage Mechanism | Architecture Justification |
+| :--- | :--- | :--- | :--- |
+| **OpenAI API Key** (`OPENAI_API_KEY`) | **Environment / KMS** | AWS Secrets Manager / Vercel Env | Master billing and model authorization; isolated from database dumps to minimize attack blast radius. |
+| **OAuth Client Secrets** (`GOOGLE_CLIENT_SECRET`, `MICROSOFT_CLIENT_SECRET`) | **Environment / KMS** | Cloud Platform Secrets | Developer credentials identifying the centralized backend application. |
+| **OAuth Master Refresh Tokens** (Single-Clinic) | **Environment / KMS** | Cloud Platform Secrets | Delegated clinic authorization. Rotated via cloud infrastructure tooling. |
+| **Dentist Calendar Mappings** (`junior`, `senior-1`, `senior-2`) | **Database** | Table: `dentist_calendar_mappings` | Clinic managers can update doctor calendar IDs or email addresses via Admin dashboard without requiring code redeployment. |
+| **Clinic Operational Settings** (`CALENDAR_PROVIDER`, working hours) | **Database** | Table: `clinic_settings` | Operational controls toggled dynamically at runtime; supports fallback to environment variables when database is cold. |
+| **Multi-Tenant OAuth Tokens** (Future SaaS Phase) | **Database (Encrypted)** | Encrypted table column (`AES-256-GCM`) | For multi-clinic platforms where clinics connect calendars via OAuth; tokens must be encrypted-at-rest with a KMS master key. |
+
+*Factory Resolution Flow:*
+`resolveCalendarProvider()` in `src/providers/calendar/calendar-factory.ts` retrieves active calendar mappings from `SettingsRepository` (`dentist_calendar_mappings` table) with graceful fallback to `.env`, dynamically constructing `GoogleCalendarAdapter` or `OutlookCalendarAdapter`.
+
 ---
 
 ## 5. Failure Recovery & Concurrency Handling
