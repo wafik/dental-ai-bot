@@ -45,3 +45,14 @@ The application provides conversational appointment management with strict serve
 - **Conversational Orchestrator**: `src/services/chat-orchestrator.ts` executes multi-turn tool loops with system prompt guardrails and a 5-iteration recursion safety cap.
 - **System Prompt Guardrails**: `src/safety/system-prompt.ts` enforces clinic boundaries, emergency deflection, and declines medical diagnoses or general chat.
 - **PostgreSQL & Drizzle ORM**: `src/repository/schema.ts`, `DrizzleAppointmentRepository` (production), and `InMemoryAppointmentRepository` (deterministic unit testing).
+
+## Conversational Voice AI & WebRTC (Day 4)
+
+The application supports real-time, two-way browser voice conversations using standard WebRTC with ephemeral session security:
+
+- **Provider-Neutral Voice Contract**: `src/providers/voice/voice-provider.ts` defines `VoiceProvider`, `VoiceSessionConfig`, and `VoiceProviderError`.
+- **OpenAI Realtime Adapter**: `src/providers/voice/openai-realtime-adapter.ts` initiates sessions with OpenAI Realtime API (`gpt-4o-realtime-preview`), configuring voice, `SYSTEM_PROMPT`, and `APPOINTMENT_TOOL_DEFINITIONS`.
+- **Ephemeral Session Security**: `POST /api/v1/voice/session` issues temporary tokens (`client_secret`), ensuring production API keys are never exposed to browser clients.
+- **Authoritative Voice Tool Calling**: `POST /api/v1/voice/tools` executes tool calls triggered by the voice model against `AppointmentService`, enforcing dentist qualification constraints and calendar sync.
+- **Client-Side WebRTC Manager**: `src/features/voice/voice-session-manager.ts` and `src/features/voice/use-realtime-voice.ts` manage microphone input, WebRTC audio streams, and bidirectional DataChannel event dispatching.
+
