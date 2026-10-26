@@ -37,10 +37,9 @@ Your AI receptionist is pre-programmed with your clinic's service catalog and ru
 ## 3. How to Connect Your Clinic Calendars
 
 The system supports both **Google Calendar** (Google Workspace) and **Microsoft Outlook** (Microsoft 365).
+All configuration is done from the **Admin Console** at `/admin` — no code changes or redeployment required.
 
 ### Option A: Connecting Google Calendar
-
-Follow these 4 simple steps to connect your clinic's Google calendars:
 
 1. **Create or Open Your Doctor Calendars in Google Calendar:**
    * Make sure each dentist has a dedicated calendar (e.g., `Dr. Junior - Clinic`, `Dr. Senior 1 - Clinic`, `Dr. Senior 2 - Clinic`).
@@ -49,8 +48,10 @@ Follow these 4 simple steps to connect your clinic's Google calendars:
    * Scroll down to **Integrate calendar** and copy the **Calendar ID** (looks like `clinic-junior@group.calendar.google.com`).
 3. **Grant Access to the AI Assistant:**
    * Under **Share with specific people or groups**, add the AI service account or system email address with **Make changes to events** permission.
-4. **Paste the IDs into Clinic Settings:**
-   * Add the Calendar IDs to your clinic configuration (`GOOGLE_CALENDAR_ID_JUNIOR`, `GOOGLE_CALENDAR_ID_SENIOR_1`, `GOOGLE_CALENDAR_ID_SENIOR_2`).
+4. **Enter the details in the Admin Console:**
+   * Sign in at `/admin`, select **Google Calendar** as the active provider.
+   * Paste the Calendar ID for each dentist under **Dentist Calendar Mappings**.
+   * Enter the Google Client ID, Client Secret, and Refresh Token under **Credentials**, then save.
 
 ---
 
@@ -62,8 +63,14 @@ If your clinic uses Microsoft 365 Outlook:
    * Note the Microsoft 365 email addresses of your doctors (e.g., `junior@brightsmileclinic.com`, `senior1@brightsmileclinic.com`).
 2. **Authorise the Dental AI App in Entra ID:**
    * Your clinic IT administrator grants the application permission to read and write calendar events (`Calendars.ReadWrite`).
-3. **Save Configuration:**
-   * Assign each dentist's email address in the application settings (`OUTLOOK_CALENDAR_ID_JUNIOR`, `OUTLOOK_CALENDAR_ID_SENIOR_1`, `OUTLOOK_CALENDAR_ID_SENIOR_2`).
+3. **Enter the details in the Admin Console:**
+   * Sign in at `/admin`, select **Microsoft Outlook** as the active provider.
+   * Enter the Tenant ID, Client ID, Client Secret, and Refresh Token, plus each dentist's calendar address, then save.
+
+> **About stored credentials:** Saved secrets are encrypted before they are written to the database
+> and are never displayed again. The field only shows whether a secret is already configured;
+> the eye icon reveals text you are currently typing, never the stored value. Leaving a credential
+> field empty keeps the previously saved secret unchanged.
 
 Once connected, any appointment booked by the AI will immediately appear on the doctor's phone and computer calendar!
 

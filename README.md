@@ -77,7 +77,10 @@ dental-ai-bot/
    - `sanitizeUserInput`: Intercepts prompt injections (`DAN`, `ignore previous instructions`, `leak system prompt`).
    - Medical Advice Deflection: Automatically deflects medical diagnosis and prescription requests with clinical disclaimers before LLM token consumption.
    - `SlidingWindowRateLimiter`: In-memory IP-based rate limiting guarding API endpoints against quota abuse.
-4. **PostgreSQL & Drizzle ORM:** Atomic concurrency control preventing race conditions and double-booking. Includes an offline `InMemoryAppointmentRepository` for zero-dependency CI testing.
+4. **PostgreSQL & Drizzle ORM:** Booking reservations are guarded by a PostgreSQL
+   transaction-scoped advisory lock per dentist/date plus an overlap check, so two concurrent
+   requests cannot both reserve an overlapping slot. Includes an offline
+   `InMemoryAppointmentRepository` for zero-dependency CI testing.
 
 ---
 
@@ -113,6 +116,22 @@ CLINIC_TIMEZONE="Asia/Jakarta"
 CALENDAR_PROVIDER="google" # or "outlook"
 ```
 
+### 2b. Admin Console Setup (production)
+
+Provider credentials can be managed from `/admin` instead of environment variables.
+Generate the deployment secrets once and keep them outside the repository:
+
+```bash
+bun run hash:admin-password "choose-a-strong-password"   # -> ADMIN_PASSWORD_HASH
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"  # SETTINGS_ENCRYPTION_KEY
+bun run db:migrate
+```
+
+Then open [http://localhost:3000/admin](http://localhost:3000/admin). Stored credentials are
+write-only: the API returns only configured status, and the eye toggle reveals only the value
+currently being typed. Environment variables remain a bootstrap fallback for any credential not
+entered in the admin console.
+
 ### 3. Running Locally
 
 ```bash
@@ -141,7 +160,7 @@ bun run lint
 # 4. Unit & Integration Test Suite (181 tests passing in ~200ms)
 bun test
 
-# 5. Playwright End-to-End Tests
+# 5. Playwright End-to-End Tests (starts a disposable PostgreSQL container; Docker required)
 bun run test:e2e
 
 # 6. Next.js Production Build

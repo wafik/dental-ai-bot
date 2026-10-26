@@ -219,13 +219,13 @@ In production enterprise deployments, configuration and credentials are bifurcat
 | **Multi-Tenant OAuth Tokens** (Future SaaS Phase) | **Database (Encrypted)** | Encrypted table column (`AES-256-GCM`) | For multi-clinic platforms where clinics connect calendars via OAuth; tokens must be encrypted-at-rest with a KMS master key. |
 
 *Factory Resolution Flow:*
-`resolveCalendarProvider()` in `src/providers/calendar/calendar-factory.ts` retrieves active calendar mappings from `SettingsRepository` (`dentist_calendar_mappings` table) with graceful fallback to `.env`, dynamically constructing `GoogleCalendarAdapter` or `OutlookCalendarAdapter`.
+`resolveCalendarProvider()` in `src/providers/calendar/calendar-factory.ts` retrieves active calendar mappings from `SettingsRepository` (`dentist_calendar_mappings` table) with graceful fallback to `.env`, dynamically constructing `GoogleCalendarAdapter` or `OutlookCalendarAdapter`. OAuth credentials are resolved from the encrypted `encrypted_secrets` table first (managed in the admin console) and fall back to environment variables for bootstrap/migration.
 
 ---
 
 ## 5. Failure Recovery & Concurrency Handling
 
 1. **Race Conditions & Double-Booking:** When two patients request the same dentist and time slot simultaneously:
-   * The database enforces a unique constraint / row lock on `(dentist_id, appointment_date, start_time)`.
-   * Only one transaction succeeds; the second receives an explicit conflict error and the assistant immediately offers the next nearest available slot.
-2. **Calendar Provider Downtime:** If Google or Outlook returns HTTP 503 or network timeouts, the system records the booking in the PostgreSQL database with status `pending_sync`, logs an audit incident, and schedules background reconciliation.
+   * Booking runs inside a PostgreSQL transaction that acquires a transaction-scoped advisory lock keyed by `(dentist_id, date)`, re-checks interval overlap against `pending` and `confirmed` rows, then inserts a `pending` reservation.
+   * Only one transaction reserves the slot; the second receives `SlotUnavailableError` and the assistant immediately offers the next nearest available slot.
+2. **Calendar Provider Downtime:** If Google or Outlook fails after a reservation is made, the reservation is marked `failed` so it stops blocking availability, and the caller receives a safe retry error. Because PostgreSQL and the calendar provider cannot share a transaction, a process crash between reservation and confirmation leaves a visible `pending` row for operational reconciliation rather than risking a double booking.
