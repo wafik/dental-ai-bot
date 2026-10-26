@@ -19,6 +19,9 @@
 /.next/
 /out/
 
+# generated assets
+/slides/output/
+
 # Local workflow artifacts
 /.superpowers/
 /.claude/
