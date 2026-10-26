@@ -68,6 +68,9 @@ export default function Home() {
               <Sparkles className="w-3 h-3 text-primary" />
               <span>AI Receptionist Ready</span>
             </Badge>
+            <Button variant="ghost" size="sm" className="text-xs" asChild>
+              <a href="/admin">Admin</a>
+            </Button>
           </div>
         </div>
       </header>
