@@ -1,6 +1,5 @@
 import { and, eq } from "drizzle-orm";
-import { drizzle, type PostgresJsDatabase } from "drizzle-orm/postgres-js";
-import postgres from "postgres";
+import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import { randomUUID } from "node:crypto";
 import type {
   DentistCalendarMappingRecord,
@@ -8,26 +7,16 @@ import type {
   UpsertDentistCalendarMappingInput,
 } from "./settings-repository";
 import { clinicSettings, dentistCalendarMappings, type DentistCalendarMappingRow } from "./schema";
+import { getDb } from "./db";
 
 /**
  * PostgreSQL settings and calendar mapping repository backed by Drizzle ORM.
  */
 export class DrizzleSettingsRepository implements SettingsRepository {
-  // biome-ignore lint/suspicious/noExplicitAny: Drizzle schema-agnostic DB type
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private readonly db: PostgresJsDatabase<any>;
+  private readonly db: PostgresJsDatabase<Record<string, never>>;
 
-  // biome-ignore lint/suspicious/noExplicitAny: Drizzle schema-agnostic DB type
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  constructor(db?: PostgresJsDatabase<any>) {
-    if (db) {
-      this.db = db;
-    } else {
-      const connectionString =
-        process.env.DATABASE_URL ?? process.env.POSTGRES_URL ?? "postgres://localhost:5432/dental";
-      const client = postgres(connectionString);
-      this.db = drizzle(client);
-    }
+  constructor(db?: PostgresJsDatabase<Record<string, never>>) {
+    this.db = db ?? getDb();
   }
 
   async getSetting(key: string): Promise<string | null> {
@@ -84,6 +73,11 @@ export class DrizzleSettingsRepository implements SettingsRepository {
 
     const rows = await query;
     return rows.map((r: DentistCalendarMappingRow) => this.toMappingRecord(r));
+  }
+
+  async getAllDentistCalendarMappings(): Promise<DentistCalendarMappingRecord[]> {
+    const rows = await this.db.select().from(dentistCalendarMappings);
+    return rows.map((row: DentistCalendarMappingRow) => this.toMappingRecord(row));
   }
 
   async upsertDentistCalendarMapping(

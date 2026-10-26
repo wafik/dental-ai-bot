@@ -3,7 +3,9 @@ import { SlidingWindowRateLimiter } from "@/safety/rate-limiter";
 import { sanitizeUserInput } from "@/safety/sanitizer";
 import { ChatOrchestrator } from "@/services/chat-orchestrator";
 import { AppointmentService } from "@/services/appointment-service";
-import { InMemoryAppointmentRepository } from "@/repository/in-memory-appointment-repository";
+import { getRuntimeCalendarProvider } from "@/services/calendar-provider-cache";
+import { getRuntimeAiConfig } from "@/services/runtime-config";
+import { getRuntimeAppointmentRepository } from "@/repository/runtime-repositories";
 import { OpenAIChatAdapter } from "@/providers/ai/openai-chat-adapter";
 import { SYSTEM_PROMPT } from "@/safety/system-prompt";
 import type { LLMChatMessage } from "@/providers/ai/llm-provider";
@@ -18,20 +20,29 @@ const defaultLimiter = new SlidingWindowRateLimiter({
   windowMs: 60000,
 });
 
-let defaultOrchestrator: ChatOrchestrator | null = null;
+const GENERIC_ERROR = "Internal server error";
 
-function getDefaultOrchestrator(): ChatOrchestrator {
-  if (!defaultOrchestrator) {
-    const repository = new InMemoryAppointmentRepository();
-    const service = new AppointmentService(repository);
-    const llm = new OpenAIChatAdapter({ apiKey: process.env.OPENAI_API_KEY || "mock-key" });
-    defaultOrchestrator = new ChatOrchestrator({
-      llmProvider: llm,
-      appointmentService: service,
-      systemPrompt: SYSTEM_PROMPT,
-    });
-  }
-  return defaultOrchestrator;
+/**
+ * Builds an orchestrator per request from runtime configuration so credential
+ * and provider changes made in the admin area apply without a restart.
+ */
+async function buildRuntimeOrchestrator(): Promise<ChatOrchestrator> {
+  const aiConfig = await getRuntimeAiConfig();
+  const calendarProvider = await getRuntimeCalendarProvider();
+  const appointmentService = new AppointmentService(
+    getRuntimeAppointmentRepository(),
+    calendarProvider,
+  );
+
+  return new ChatOrchestrator({
+    llmProvider: new OpenAIChatAdapter({
+      apiKey: aiConfig.apiKey,
+      baseUrl: aiConfig.baseUrl,
+      model: aiConfig.model,
+    }),
+    appointmentService,
+    systemPrompt: SYSTEM_PROMPT,
+  });
 }
 
 export function createChatHandler(deps: ChatRouteDeps = {}) {
@@ -88,7 +99,7 @@ export function createChatHandler(deps: ChatRouteDeps = {}) {
       }
 
       // 4. Execute Chat Orchestrator
-      const orchestrator = deps.orchestrator || getDefaultOrchestrator();
+      const orchestrator = deps.orchestrator ?? (await buildRuntimeOrchestrator());
       const result = await orchestrator.handleUserMessage(messages);
 
       return NextResponse.json(
@@ -99,9 +110,8 @@ export function createChatHandler(deps: ChatRouteDeps = {}) {
         },
         { status: 200 },
       );
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-      return NextResponse.json({ success: false, error: message }, { status: 500 });
+    } catch {
+      return NextResponse.json({ success: false, error: GENERIC_ERROR }, { status: 500 });
     }
   };
 }

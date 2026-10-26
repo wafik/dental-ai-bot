@@ -1,20 +1,22 @@
 import { NextResponse } from "next/server";
-import { InMemoryAppointmentRepository } from "@/repository/in-memory-appointment-repository";
 import { AppointmentService } from "@/services/appointment-service";
 import { executeAppointmentTool } from "@/services/appointment-tools";
+import { getRuntimeCalendarProvider } from "@/services/calendar-provider-cache";
+import { getRuntimeAppointmentRepository } from "@/repository/runtime-repositories";
 
 export type VoiceToolsRouteDeps = {
   appointmentService?: AppointmentService;
 };
 
-let defaultAppointmentService: AppointmentService | null = null;
+const GENERIC_ERROR = "Internal server error";
 
-function getDefaultAppointmentService(): AppointmentService {
-  if (!defaultAppointmentService) {
-    const repository = new InMemoryAppointmentRepository();
-    defaultAppointmentService = new AppointmentService(repository);
-  }
-  return defaultAppointmentService;
+/**
+ * Builds the appointment service per request so calendar provider settings and
+ * credentials from the admin area apply without a restart.
+ */
+async function buildRuntimeAppointmentService(): Promise<AppointmentService> {
+  const calendarProvider = await getRuntimeCalendarProvider();
+  return new AppointmentService(getRuntimeAppointmentRepository(), calendarProvider);
 }
 
 export function createVoiceToolsHandler(deps: VoiceToolsRouteDeps = {}) {
@@ -31,7 +33,7 @@ export function createVoiceToolsHandler(deps: VoiceToolsRouteDeps = {}) {
         );
       }
 
-      const service = deps.appointmentService || getDefaultAppointmentService();
+      const service = deps.appointmentService ?? (await buildRuntimeAppointmentService());
       const rawResultString = await executeAppointmentTool(service, toolName, toolArgs);
 
       let parsedResult: unknown;
@@ -49,9 +51,8 @@ export function createVoiceToolsHandler(deps: VoiceToolsRouteDeps = {}) {
         },
         { status: 200 },
       );
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-      return NextResponse.json({ success: false, error: message }, { status: 500 });
+    } catch {
+      return NextResponse.json({ success: false, error: GENERIC_ERROR }, { status: 500 });
     }
   };
 }

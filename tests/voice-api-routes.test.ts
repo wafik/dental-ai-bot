@@ -49,7 +49,7 @@ describe("Voice API Route Handlers", () => {
 
       const json = await response.json();
       expect(json.success).toBe(false);
-      expect(json.error).toContain("Failed to reach OpenAI Realtime API");
+      expect(json.error).toBe("Internal server error");
     });
   });
 

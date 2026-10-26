@@ -1,22 +1,24 @@
 import { NextResponse } from "next/server";
 import { OpenAIRealtimeAdapter } from "@/providers/voice/openai-realtime-adapter";
+import { getRuntimeOpenAiApiKey } from "@/services/runtime-config";
 import type { VoiceProvider } from "@/providers/voice/voice-provider";
 
 export type VoiceSessionRouteDeps = {
   voiceProvider?: VoiceProvider;
 };
 
+const GENERIC_ERROR = "Internal server error";
+
 export function createVoiceSessionHandler(deps: VoiceSessionRouteDeps = {}) {
   return async function POST(_request: Request): Promise<Response> {
     try {
-      const apiKey = process.env.OPENAI_API_KEY || "";
-      const voiceProvider = deps.voiceProvider || new OpenAIRealtimeAdapter({ apiKey });
+      const voiceProvider =
+        deps.voiceProvider ?? new OpenAIRealtimeAdapter({ apiKey: await getRuntimeOpenAiApiKey() });
 
       const session = await voiceProvider.createSession();
       return NextResponse.json({ success: true, data: session }, { status: 200 });
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-      return NextResponse.json({ success: false, error: message }, { status: 500 });
+    } catch {
+      return NextResponse.json({ success: false, error: GENERIC_ERROR }, { status: 500 });
     }
   };
 }
