@@ -1,0 +1,889 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BrightSmile Dental AI — Interactive 3D System Flow</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://unpkg.com/three@0.170.0/build/three.module.js",
+        "three/addons/": "https://unpkg.com/three@0.170.0/examples/jsm/"
+      }
+    }
+  </script>
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      background-color: #070B14;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      user-select: none;
+    }
+    #webgl-canvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      z-index: 1;
+    }
+    .glass-panel {
+      background: rgba(13, 21, 38, 0.78);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      border: 1px solid rgba(56, 189, 248, 0.2);
+      box-shadow: 0 12px 36px 0 rgba(0, 0, 0, 0.5);
+    }
+    .glass-btn {
+      background: rgba(30, 41, 59, 0.8);
+      border: 1px solid rgba(148, 163, 184, 0.25);
+      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    .glass-btn:hover {
+      background: rgba(2, 132, 199, 0.25);
+      border-color: rgba(56, 189, 248, 0.6);
+      transform: translateY(-1px);
+    }
+    .glass-btn.active {
+      background: #0284C7;
+      border-color: #38BDF8;
+      color: #FFFFFF;
+      box-shadow: 0 0 16px rgba(2, 132, 199, 0.6);
+    }
+    /* Pulse glow */
+    @keyframes pulse-glow {
+      0%, 100% { opacity: 0.8; transform: scale(1); }
+      50% { opacity: 1; transform: scale(1.05); }
+    }
+    .pulse-indicator {
+      animation: pulse-glow 2s infinite ease-in-out;
+    }
+    /* Custom scrollbar */
+    ::-webkit-scrollbar {
+      width: 5px;
+    }
+    ::-webkit-scrollbar-track {
+      background: rgba(15, 23, 42, 0.6);
+    }
+    ::-webkit-scrollbar-thumb {
+      background: rgba(56, 189, 248, 0.4);
+      border-radius: 4px;
+    }
+  </style>
+</head>
+<body class="text-slate-100">
+
+  <!-- 3D WebGL Canvas -->
+  <canvas id="webgl-canvas"></canvas>
+
+  <!-- Top Navigation & Controls Bar -->
+  <header class="fixed top-4 left-4 right-4 z-20 flex flex-wrap items-center justify-between gap-4 pointer-events-none">
+    <!-- Brand / Title -->
+    <div class="glass-panel rounded-2xl px-5 py-3 pointer-events-auto flex items-center gap-3">
+      <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-sky-500 to-teal-400 flex items-center justify-center shadow-lg shadow-sky-500/30">
+        <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"/>
+        </svg>
+      </div>
+      <div>
+        <div class="flex items-center gap-2">
+          <h1 class="font-bold text-base md:text-lg tracking-tight bg-gradient-to-r from-sky-300 via-white to-teal-200 bg-clip-text text-transparent">BrightSmile Dental AI</h1>
+          <span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-sky-500/20 text-sky-300 border border-sky-400/30">3D LIVE FLOW</span>
+        </div>
+        <p class="text-xs text-slate-400">Omnichannel WebRTC Voice, Clinical Rules & Dual Calendar Sync</p>
+      </div>
+    </div>
+
+    <!-- Simulation Controls -->
+    <div class="glass-panel rounded-2xl px-4 py-2 pointer-events-auto flex items-center gap-2 text-xs">
+      <span class="text-slate-400 font-semibold uppercase tracking-wider text-[10px] mr-1">Simulate Flow:</span>
+      <button id="sim-voice" class="glass-btn px-3 py-1.5 rounded-xl font-medium flex items-center gap-1.5 text-sky-300 active">
+        <span class="w-2 h-2 rounded-full bg-sky-400 animate-ping"></span>
+        Voice Booking (Happy Path)
+      </button>
+      <button id="sim-junior-block" class="glass-btn px-3 py-1.5 rounded-xl font-medium flex items-center gap-1.5 text-rose-300">
+        <span class="w-2 h-2 rounded-full bg-rose-500"></span>
+        Dr. Junior Scope Guard
+      </button>
+      <button id="sim-conflict" class="glass-btn px-3 py-1.5 rounded-xl font-medium flex items-center gap-1.5 text-amber-300">
+        <span class="w-2 h-2 rounded-full bg-amber-500"></span>
+        Calendar Conflict Lock
+      </button>
+    </div>
+
+    <!-- Camera View Preset Buttons & Guided Tour -->
+    <div class="glass-panel rounded-2xl px-3 py-2 pointer-events-auto flex items-center gap-1.5 text-xs">
+      <span class="text-slate-400 font-semibold uppercase tracking-wider text-[10px] mr-1">Camera:</span>
+      <button data-cam="overview" class="glass-btn px-2.5 py-1 rounded-lg cam-btn active">Overview</button>
+      <button data-cam="patient" class="glass-btn px-2.5 py-1 rounded-lg cam-btn">Patient Layer</button>
+      <button data-cam="engine" class="glass-btn px-2.5 py-1 rounded-lg cam-btn">Clinical Engine</button>
+      <button data-cam="calendar" class="glass-btn px-2.5 py-1 rounded-lg cam-btn">Calendar Sync</button>
+      <button id="btn-tour" class="glass-btn px-3 py-1 rounded-lg text-emerald-300 font-semibold flex items-center gap-1 bg-emerald-950/40 border-emerald-500/40">
+        <span>▶</span>
+        <span>Guided Tour</span>
+      </button>
+      <button id="btn-pause" class="glass-btn px-2.5 py-1 rounded-lg text-amber-300" title="Pause Animation">⏸</button>
+    </div>
+  </header>
+
+  <!-- Left Bottom Legend & HUD -->
+  <div class="fixed bottom-4 left-4 z-20 pointer-events-none">
+    <div class="glass-panel rounded-2xl p-4 pointer-events-auto w-72 text-xs">
+      <div class="flex items-center justify-between pb-2 mb-2 border-b border-slate-700/50">
+        <span class="font-bold text-slate-300 uppercase tracking-wider text-[10px]">Data Flow Legend</span>
+        <div class="flex items-center gap-2">
+          <span class="text-[10px] text-slate-400">FPS:</span>
+          <span id="fps-counter" class="font-mono text-sky-400 font-bold">60</span>
+        </div>
+      </div>
+      <div class="space-y-2">
+        <div class="flex items-center gap-2.5">
+          <span class="w-3 h-3 rounded-full bg-sky-400 shadow-sm shadow-sky-400"></span>
+          <span class="text-slate-300">WebRTC Opus Audio / Session Stream</span>
+        </div>
+        <div class="flex items-center gap-2.5">
+          <span class="w-3 h-3 rounded-full bg-indigo-500 shadow-sm shadow-indigo-500"></span>
+          <span class="text-slate-300">API Tool Call / Ephemeral Auth</span>
+        </div>
+        <div class="flex items-center gap-2.5">
+          <span class="w-3 h-3 rounded-full bg-emerald-400 shadow-sm shadow-emerald-400"></span>
+          <span class="text-slate-300">Clinical Validation & Booking Lock</span>
+        </div>
+        <div class="flex items-center gap-2.5">
+          <span class="w-3 h-3 rounded-full bg-amber-400 shadow-sm shadow-amber-400"></span>
+          <span class="text-slate-300">External FreeBusy & MS Graph Sync</span>
+        </div>
+        <div class="flex items-center gap-2.5">
+          <span class="w-3 h-3 rounded-full bg-rose-500 shadow-sm shadow-rose-500"></span>
+          <span class="text-slate-300">Deflected Injection / Blocked Surgery</span>
+        </div>
+      </div>
+      <div class="mt-3 pt-2 border-t border-slate-700/50 text-[10px] text-slate-400 flex items-center justify-between">
+        <span>Click node to inspect details</span>
+        <span>Drag to rotate • Scroll to zoom</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Right Inspector Drawer (Node Details on Click) -->
+  <div class="fixed top-24 right-4 bottom-4 z-20 pointer-events-none w-80 md:w-96 flex flex-col justify-end items-end gap-2">
+    <button id="reopen-inspector" class="hidden glass-panel rounded-xl px-3 py-2 text-xs font-semibold text-sky-300 pointer-events-auto flex items-center gap-1.5 hover:bg-sky-500/20 shadow-lg transition">
+      <svg class="w-4 h-4 text-sky-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+      <span>Inspect Details</span>
+    </button>
+    <div id="inspector-card" class="glass-panel rounded-2xl p-5 pointer-events-auto transition-all duration-300 max-h-[80vh] overflow-y-auto">
+      <div class="flex items-start justify-between gap-2 border-b border-slate-700/60 pb-3">
+        <div>
+          <span id="node-tag" class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-sky-500/20 text-sky-400 border border-sky-400/30 uppercase">SYSTEM NODE 01</span>
+          <h2 id="node-title" class="text-lg font-bold text-white mt-1">Patient Inbound Layer</h2>
+          <p id="node-sub" class="text-xs text-sky-300">WebRTC Opus Audio & Next.js React 19 Chat</p>
+        </div>
+        <button id="close-inspector" class="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800/60 transition" title="Hide Inspector">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+      </div>
+
+      <div class="mt-4 space-y-4 text-xs">
+        <div>
+          <h3 class="font-semibold text-slate-400 uppercase tracking-wider text-[10px]">Architecture Function</h3>
+          <p id="node-desc" class="mt-1 text-slate-200 leading-relaxed">
+            Direct audio-to-audio WebRTC connection with OpenAI Realtime API. Zero intermediary Speech-To-Text or Text-To-Speech pipeline delays.
+          </p>
+        </div>
+
+        <div class="grid grid-cols-2 gap-2">
+          <div class="bg-slate-900/60 p-2.5 rounded-xl border border-slate-800">
+            <span class="text-[10px] text-slate-400 uppercase font-semibold">Latency / Speed</span>
+            <div id="node-metric1" class="text-sm font-bold text-sky-400 mt-0.5">&lt; 300 ms</div>
+          </div>
+          <div class="bg-slate-900/60 p-2.5 rounded-xl border border-slate-800">
+            <span class="text-[10px] text-slate-400 uppercase font-semibold">Security Standard</span>
+            <div id="node-metric2" class="text-sm font-bold text-emerald-400 mt-0.5">Ephemeral JWT</div>
+          </div>
+        </div>
+
+        <div>
+          <h3 class="font-semibold text-slate-400 uppercase tracking-wider text-[10px]">Clinical & Technical Guardrails</h3>
+          <ul id="node-points" class="mt-1.5 space-y-1.5 text-slate-300">
+            <li class="flex items-start gap-2">
+              <span class="text-sky-400 mt-0.5">•</span>
+              <span>Ephemerality: Session secrets expire in under 60 seconds.</span>
+            </li>
+            <li class="flex items-start gap-2">
+              <span class="text-sky-400 mt-0.5">•</span>
+              <span>Natural interruptions: Full-duplex audio allows patients to cut in smoothly.</span>
+            </li>
+          </ul>
+        </div>
+
+        <div class="pt-3 border-t border-slate-700/60 flex items-center justify-between text-[11px]">
+          <span class="text-slate-400">Endpoint Routing:</span>
+          <code id="node-endpoint" class="px-2 py-0.5 rounded bg-slate-950 font-mono text-sky-300 border border-slate-800">POST /api/v1/voice/session</code>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Three.js App Code -->
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+    // 1. Scene, Camera, Renderer setup
+    const canvas = document.getElementById('webgl-canvas');
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x070B14);
+    scene.fog = new THREE.FogExp2(0x070B14, 0.025);
+
+    const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100);
+    camera.position.set(2.5, 17, 29);
+
+    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false, powerPreference: 'high-performance' });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+
+    const controls = new OrbitControls(camera, canvas);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.05;
+    controls.maxPolarAngle = Math.PI / 2 + 0.1;
+    controls.minDistance = 6;
+    controls.maxDistance = 50;
+    controls.target.set(2.5, 0.5, 0);
+    controls.addEventListener('start', () => {
+      stopTour();
+    });
+
+    // 2. Lighting
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.9);
+    scene.add(ambientLight);
+
+    const dirLight1 = new THREE.DirectionalLight(0x38bdf8, 2.5);
+    dirLight1.position.set(15, 20, 10);
+    scene.add(dirLight1);
+
+    const dirLight2 = new THREE.DirectionalLight(0x10b981, 1.8);
+    dirLight2.position.set(-15, 10, -10);
+    scene.add(dirLight2);
+
+    const frontLight = new THREE.DirectionalLight(0xffffff, 1.8);
+    frontLight.position.set(-1.8, 12, 25);
+    scene.add(frontLight);
+
+    const pointLight = new THREE.PointLight(0x38bdf8, 2.5, 30);
+    pointLight.position.set(-2.5, 6, 0);
+    scene.add(pointLight);
+
+    // 3. Grid Ground & Ambient Floating Particles
+    const gridHelper = new THREE.GridHelper(60, 60, 0x0284c7, 0x1e293b);
+    gridHelper.position.y = -4;
+    scene.add(gridHelper);
+
+    // Particle Stars/Dust
+    const particleCount = 400;
+    const particleGeo = new THREE.BufferGeometry();
+    const particlePos = new Float32Array(particleCount * 3);
+    for (let i = 0; i < particleCount * 3; i += 3) {
+      particlePos[i] = (Math.random() - 0.5) * 50;
+      particlePos[i + 1] = (Math.random() - 0.5) * 20;
+      particlePos[i + 2] = (Math.random() - 0.5) * 50;
+    }
+    particleGeo.setAttribute('position', new THREE.BufferAttribute(particlePos, 3));
+    const particleMat = new THREE.PointsMaterial({
+      color: 0x38bdf8,
+      size: 0.15,
+      transparent: true,
+      opacity: 0.6,
+      blending: THREE.AdditiveBlending
+    });
+    const particles = new THREE.Points(particleGeo, particleMat);
+    scene.add(particles);
+
+    // Helper: Canvas Texture for crisp node labels in 3D
+    function createTextSprite(text, subtext, color = '#38bdf8') {
+      const c = document.createElement('canvas');
+      c.width = 512;
+      c.height = 256;
+      const ctx = c.getContext('2d');
+
+      // Rounded background tag with deep dark blue tint
+      ctx.fillStyle = 'rgba(7, 14, 28, 0.96)';
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 8;
+      ctx.beginPath();
+      if (ctx.roundRect) {
+        ctx.roundRect(10, 10, 492, 236, 28);
+      } else {
+        ctx.rect(10, 10, 492, 236);
+      }
+      ctx.fill();
+      ctx.stroke();
+
+      // Colored Pill Header Bar inside tag
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      if (ctx.roundRect) {
+        ctx.roundRect(24, 24, 464, 12, 6);
+      } else {
+        ctx.rect(24, 24, 464, 12);
+      }
+      ctx.fill();
+
+      // Title
+      ctx.fillStyle = '#FFFFFF';
+      ctx.font = 'bold 44px Arial';
+      ctx.textAlign = 'center';
+      ctx.fillText(text, 256, 110);
+
+      // Subtext
+      ctx.fillStyle = color;
+      ctx.font = 'bold 28px Arial';
+      ctx.fillText(subtext, 256, 175);
+
+      const tex = new THREE.CanvasTexture(c);
+      const spriteMat = new THREE.SpriteMaterial({ map: tex, transparent: true });
+      const sprite = new THREE.Sprite(spriteMat);
+      sprite.scale.set(4.6, 2.3, 1);
+      return sprite;
+    }
+
+    // 4. System Nodes Definition
+    const NODES_DATA = [
+      {
+        id: 'patient',
+        title: 'Patient Inbound',
+        sub: 'WebRTC Opus Audio & Chat',
+        pos: [-9.5, 0, 0],
+        color: 0x0284c7,
+        emissive: 0x0284c7,
+        tag: 'NODE 01: INBOUND',
+        desc: 'Direct audio-to-audio WebRTC connection with OpenAI Realtime API. Zero intermediary Speech-To-Text or Text-To-Speech pipeline delays. Next.js React 19 chat frontend with streaming tokens.',
+        m1: '< 300 ms',
+        m2: 'WebRTC / Opus',
+        endpoint: 'Client Browser ➔ OpenAI Media Gate',
+        points: [
+          'Full-duplex natural audio with instant interrupt handling.',
+          'Next.js 16 App Router chat client with real-time markdown streaming.',
+          'Accessible shadcn/ui components with realtime feedback.'
+        ]
+      },
+      {
+        id: 'guardrails',
+        title: 'Edge Guardrails',
+        sub: 'Sanitizer & Rate Limiter',
+        pos: [-5.6, 1.8, -1.2],
+        color: 0xef4444,
+        emissive: 0xdc2626,
+        tag: 'NODE 02: SECURITY EDGE',
+        desc: 'In-memory sliding window IP rate limiter and strict clinical sanitizer. Deflects jailbreak attempts (DAN, prompt injections) and intercepts medical advice queries without consuming LLM tokens.',
+        m1: '0 Tokens Wasted',
+        m2: 'Sliding Window',
+        endpoint: 'src/safety/sanitizer.ts',
+        points: [
+          'Automatic deflection of oral cancer, antibiotic, or dosage inquiries.',
+          'Prompt injection regex blocks DAN & system instruction leaks.',
+          'Returns official medical disclaimers directing patients to in-clinic care.'
+        ]
+      },
+      {
+        id: 'gateway',
+        title: 'Next.js API Gateway',
+        sub: 'Auth & DataChannel Tools',
+        pos: [-1.8, 0, 0],
+        color: 0x6366f1,
+        emissive: 0x4f46e5,
+        tag: 'NODE 03: API GATEWAY',
+        desc: 'Server-side API routes issuing short-lived ephemeral session secrets (<60s expiry) to prevent master API key leakage. Receives tool call requests over WebRTC DataChannel.',
+        m1: '< 60s Expiry',
+        m2: 'Zero Key Leak',
+        endpoint: 'POST /api/v1/voice/session & /tools',
+        points: [
+          'Never exposes master OPENAI_API_KEY to browser bundles.',
+          'Secure execution of schedule queries & appointment bookings.',
+          'Bidirectional real-time event routing over DataChannel.'
+        ]
+      },
+      {
+        id: 'clinical_engine',
+        title: 'Clinical Scheduling Engine',
+        sub: 'Doctor Qualification Matrix',
+        pos: [2.2, 1.8, 0],
+        color: 0x10b981,
+        emissive: 0x059669,
+        tag: 'NODE 04: CORE ENGINE',
+        desc: 'Authoritative clinical rule validation. Enforces doctor scope: Dr. Junior is restricted to Services A & B, while Dr. Senior 1 & 2 handle full scope (A through E). Hard rules override AI suggestions.',
+        m1: '100% Compliant',
+        m2: 'Deterministic',
+        endpoint: 'src/services/appointment-service.ts',
+        points: [
+          'Junior restricted from Root Canal (C), Crown (D), and Implant Surgery (E).',
+          'Automatic slot expansion (6h surgery expands to 12 consecutive 30-min slots).',
+          'Intelligent doctor rerouting if patient requests unqualified procedure.'
+        ]
+      },
+      {
+        id: 'database',
+        title: 'PostgreSQL Database',
+        sub: 'Drizzle ORM & Row Locks',
+        pos: [6.2, -1.6, -2.5],
+        color: 0xf59e0b,
+        emissive: 0xd97706,
+        tag: 'NODE 05: PERSISTENCE',
+        desc: 'Managed PostgreSQL database storing appointments, clinic settings, and dentist calendar mappings. Enforces atomic interval overlap collision locks to guarantee zero double-booking.',
+        m1: '0 Collisions',
+        m2: 'ACID Atomic',
+        endpoint: 'appointments & clinic_settings',
+        points: [
+          'Atomic collision detection (start < existingEnd && end > existingStart).',
+          'Dynamic doctor calendar mappings editable without code redeployment.',
+          'Zero-downtime runtime configuration updates.'
+        ]
+      },
+      {
+        id: 'calendar_sync',
+        title: 'Dual Calendar Engine',
+        sub: 'Google & Microsoft Graph',
+        pos: [6.2, 2.0, 2.5],
+        color: 0x38bdf8,
+        emissive: 0x0284c7,
+        tag: 'NODE 06: CALENDAR SYNC',
+        desc: 'Bidirectional calendar integration. Google Calendar API v3 with OAuth token rotation & FreeBusy queries, plus Microsoft 365 Outlook calendarView with @odata.nextLink pagination.',
+        m1: 'RFC3339 UTC',
+        m2: 'Dual Sync',
+        endpoint: 'Google API v3 & MS Graph',
+        points: [
+          'Provider-neutral CalendarProvider interface.',
+          'In-memory token caching with proactive renewal 5m before expiry.',
+          'Strict UTC ISO string conversion preventing timezone drift.'
+        ]
+      }
+    ];
+
+    // Build 3D Node Meshes
+    const nodeMeshes = [];
+    const nodeGroup = new THREE.Group();
+    scene.add(nodeGroup);
+
+    const boxGeo = new THREE.BoxGeometry(2.4, 1.4, 2.4);
+    const outerRingGeo = new THREE.TorusGeometry(1.8, 0.05, 16, 48);
+
+    NODES_DATA.forEach((data) => {
+      const g = new THREE.Group();
+      g.position.set(data.pos[0], data.pos[1], data.pos[2]);
+
+      // Core Stylized Box using lightweight MeshStandardMaterial
+      const mat = new THREE.MeshStandardMaterial({
+        color: data.color,
+        emissive: data.emissive,
+        emissiveIntensity: 0.45,
+        roughness: 0.2,
+        metalness: 0.5,
+        transparent: true,
+        opacity: 0.92
+      });
+      const box = new THREE.Mesh(boxGeo, mat);
+      box.userData = { id: data.id, rawData: data };
+      g.add(box);
+      nodeMeshes.push(box);
+
+      // Inner Core Glow Sphere
+      const sphereMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+      const sphere = new THREE.Mesh(new THREE.SphereGeometry(0.4, 12, 12), sphereMat);
+      g.add(sphere);
+
+      // Glowing Outer Ring
+      const ringMat = new THREE.MeshBasicMaterial({
+        color: data.color,
+        transparent: true,
+        opacity: 0.8
+      });
+      const ring = new THREE.Mesh(outerRingGeo, ringMat);
+      ring.rotation.x = Math.PI / 2;
+      g.add(ring);
+      g.userData.ring = ring;
+
+      // 3D Text Tag
+      const sprite = createTextSprite(data.title, data.sub, `#${data.color.toString(16).padStart(6, '0')}`);
+      sprite.position.set(0, 1.8, 0);
+      g.add(sprite);
+
+      // Local soft colored point light illuminating the node and floor
+      const nodeLight = new THREE.PointLight(data.color, 1.2, 7);
+      nodeLight.position.set(0, 0.5, 0);
+      g.add(nodeLight);
+
+      nodeGroup.add(g);
+    });
+
+    // 5. Connective Spline Pipes (Pipes between nodes)
+    const CONNECTIONS = [
+      { from: 'patient', to: 'guardrails', color: 0x0284c7 },
+      { from: 'guardrails', to: 'gateway', color: 0x6366f1 },
+      { from: 'gateway', to: 'clinical_engine', color: 0x10b981 },
+      { from: 'clinical_engine', to: 'database', color: 0xf59e0b },
+      { from: 'clinical_engine', to: 'calendar_sync', color: 0x38bdf8 },
+      { from: 'database', to: 'patient', color: 0x10b981, isReturn: true }
+    ];
+
+    const curves = [];
+    const pipeGroup = new THREE.Group();
+    scene.add(pipeGroup);
+
+    function getNodePos(id) {
+      const n = NODES_DATA.find((item) => item.id === id);
+      return new THREE.Vector3(...n.pos);
+    }
+
+    CONNECTIONS.forEach((conn) => {
+      const p1 = getNodePos(conn.from);
+      const p2 = getNodePos(conn.to);
+
+      let mid;
+      if (conn.isReturn) {
+        // Broad sweeping return curve below
+        mid = new THREE.Vector3(-1.8, -3.8, 3.2);
+      } else {
+        mid = new THREE.Vector3(
+          (p1.x + p2.x) / 2,
+          (p1.y + p2.y) / 2 + 0.8,
+          (p1.z + p2.z) / 2
+        );
+      }
+
+      const curve = new THREE.QuadraticBezierCurve3(p1, mid, p2);
+      curves.push({ curve, conn });
+
+      // Tube Geometry
+      const tubeGeo = new THREE.TubeGeometry(curve, 48, 0.08, 8, false);
+      const tubeMat = new THREE.MeshStandardMaterial({
+        color: conn.color,
+        emissive: conn.color,
+        emissiveIntensity: 0.35,
+        transparent: true,
+        opacity: 0.45,
+        roughness: 0.3
+      });
+      const tubeMesh = new THREE.Mesh(tubeGeo, tubeMat);
+      pipeGroup.add(tubeMesh);
+    });
+
+    // 6. Animated Data Packets traveling through the pipes
+    const packetGroup = new THREE.Group();
+    scene.add(packetGroup);
+
+    const packetGeo = new THREE.SphereGeometry(0.24, 16, 16);
+    const packetList = [];
+
+    curves.forEach(({ curve, conn }, idx) => {
+      // 2 packets per curve for visual density
+      for (let k = 0; k < 2; k++) {
+        const pMat = new THREE.MeshBasicMaterial({ color: conn.color });
+        const pMesh = new THREE.Mesh(packetGeo, pMat);
+        packetGroup.add(pMesh);
+
+        packetList.push({
+          mesh: pMesh,
+          curve: curve,
+          color: conn.color,
+          speed: 0.15 + (idx * 0.02),
+          offset: k * 0.5,
+          active: true
+        });
+      }
+    });
+
+    // 7. Raycasting for Node Inspection
+    const raycaster = new THREE.Raycaster();
+    const mouse = new THREE.Vector2();
+    let hoveredNode = null;
+    let selectedNodeId = 'patient';
+
+    function updateInspector(nodeData) {
+      document.getElementById('node-tag').textContent = nodeData.tag;
+      document.getElementById('node-title').textContent = nodeData.title;
+      document.getElementById('node-sub').textContent = nodeData.sub;
+      document.getElementById('node-desc').textContent = nodeData.desc;
+      document.getElementById('node-metric1').textContent = nodeData.m1;
+      document.getElementById('node-metric2').textContent = nodeData.m2;
+      document.getElementById('node-endpoint').textContent = nodeData.endpoint;
+
+      const ul = document.getElementById('node-points');
+      ul.innerHTML = '';
+      nodeData.points.forEach((pt) => {
+        const li = document.createElement('li');
+        li.className = 'flex items-start gap-2';
+        li.innerHTML = `<span class="text-sky-400 mt-0.5">•</span><span>${pt}</span>`;
+        ul.appendChild(li);
+      });
+
+      const inspectorCard = document.getElementById('inspector-card');
+      const reopenBtn = document.getElementById('reopen-inspector');
+      if (inspectorCard) inspectorCard.classList.remove('hidden');
+      if (reopenBtn) reopenBtn.classList.add('hidden');
+    }
+
+    // Close & Reopen Inspector Drawer Listeners
+    const closeInspectorBtn = document.getElementById('close-inspector');
+    const reopenInspectorBtn = document.getElementById('reopen-inspector');
+    const inspectorCardEl = document.getElementById('inspector-card');
+
+    if (closeInspectorBtn && inspectorCardEl && reopenInspectorBtn) {
+      closeInspectorBtn.addEventListener('click', () => {
+        inspectorCardEl.classList.add('hidden');
+        reopenInspectorBtn.classList.remove('hidden');
+      });
+
+      reopenInspectorBtn.addEventListener('click', () => {
+        inspectorCardEl.classList.remove('hidden');
+        reopenInspectorBtn.classList.add('hidden');
+      });
+    }
+
+    // Initial inspector load
+    updateInspector(NODES_DATA[0]);
+
+    window.addEventListener('pointermove', (e) => {
+      mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+      mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+
+      raycaster.setFromCamera(mouse, camera);
+      const intersects = raycaster.intersectObjects(nodeMeshes);
+
+      if (intersects.length > 0) {
+        document.body.style.cursor = 'pointer';
+        hoveredNode = intersects[0].object;
+      } else {
+        document.body.style.cursor = 'default';
+        hoveredNode = null;
+      }
+    });
+
+    window.addEventListener('click', (e) => {
+      if (hoveredNode) {
+        const data = hoveredNode.userData.rawData;
+        selectedNodeId = data.id;
+        updateInspector(data);
+
+        // Glide camera toward node
+        targetCamPos.set(data.pos[0], data.pos[1] + 3.5, data.pos[2] + 7.5);
+        targetLookAt.set(data.pos[0], data.pos[1], data.pos[2]);
+        isTransitioningCamera = true;
+      }
+    });
+
+    // 8. Camera Presets
+    const CAM_PRESETS = {
+      overview: { pos: new THREE.Vector3(2.5, 17, 29), look: new THREE.Vector3(2.5, 0.5, 0) },
+      patient: { pos: new THREE.Vector3(-9.5, 3.8, 8.5), look: new THREE.Vector3(-9.5, 0, 0) },
+      engine: { pos: new THREE.Vector3(2.2, 4.8, 9.5), look: new THREE.Vector3(2.2, 1.8, 0) },
+      calendar: { pos: new THREE.Vector3(6.2, 4.2, 11), look: new THREE.Vector3(6.2, 1, 0) }
+    };
+
+    let targetCamPos = CAM_PRESETS.overview.pos.clone();
+    let targetLookAt = CAM_PRESETS.overview.look.clone();
+    let isTransitioningCamera = false;
+
+    document.querySelectorAll('.cam-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        stopTour();
+        document.querySelectorAll('.cam-btn').forEach((b) => b.classList.remove('active'));
+        btn.classList.add('active');
+        const key = btn.dataset.cam;
+        if (CAM_PRESETS[key]) {
+          targetCamPos.copy(CAM_PRESETS[key].pos);
+          targetLookAt.copy(CAM_PRESETS[key].look);
+          isTransitioningCamera = true;
+        }
+      });
+    });
+
+    // Guided 3D Tour Implementation
+    let tourActive = false;
+    let tourIndex = 0;
+    let tourTimer = null;
+    const tourBtn = document.getElementById('btn-tour');
+
+    function stopTour() {
+      if (tourActive) {
+        tourActive = false;
+        clearTimeout(tourTimer);
+        tourBtn.classList.remove('active', 'bg-emerald-500');
+        tourBtn.innerHTML = '<span>▶</span><span>Guided Tour</span>';
+      }
+    }
+
+    function advanceTour() {
+      if (!tourActive) return;
+
+      const node = NODES_DATA[tourIndex];
+      updateInspector(node);
+      const card = document.getElementById('inspector-card');
+      if (card) card.classList.remove('hidden');
+
+      targetCamPos.set(node.pos[0], node.pos[1] + 3.8, node.pos[2] + 8.5);
+      targetLookAt.set(node.pos[0], node.pos[1] + 0.5, node.pos[2]);
+      isTransitioningCamera = true;
+
+      tourBtn.innerHTML = `<span>⏹</span><span>Tour (${tourIndex + 1}/${NODES_DATA.length})</span>`;
+
+      tourTimer = setTimeout(() => {
+        tourIndex++;
+        if (tourIndex >= NODES_DATA.length) {
+          // Finish tour, return to overview
+          stopTour();
+          targetCamPos.copy(CAM_PRESETS.overview.pos);
+          targetLookAt.copy(CAM_PRESETS.overview.look);
+          isTransitioningCamera = true;
+          document.querySelector('[data-cam="overview"]').classList.add('active');
+        } else {
+          advanceTour();
+        }
+      }, 4500);
+    }
+
+    tourBtn.addEventListener('click', () => {
+      if (tourActive) {
+        stopTour();
+      } else {
+        tourActive = true;
+        tourIndex = 0;
+        tourBtn.classList.add('active', 'bg-emerald-500');
+        document.querySelectorAll('.cam-btn').forEach((b) => b.classList.remove('active'));
+        advanceTour();
+      }
+    });
+
+    // Simulation Trigger Handlers
+    let currentScenario = 'voice';
+
+    document.getElementById('sim-voice').addEventListener('click', () => {
+      setScenario('voice');
+    });
+    document.getElementById('sim-junior-block').addEventListener('click', () => {
+      setScenario('junior-block');
+    });
+    document.getElementById('sim-conflict').addEventListener('click', () => {
+      setScenario('conflict');
+    });
+
+    function setScenario(scen) {
+      currentScenario = scen;
+      document.querySelectorAll('#sim-voice, #sim-junior-block, #sim-conflict').forEach((b) => b.classList.remove('active'));
+
+      if (scen === 'voice') {
+        document.getElementById('sim-voice').classList.add('active');
+        packetList.forEach((p) => {
+          p.mesh.material.color.setHex(p.color);
+        });
+        updateInspector(NODES_DATA[0]);
+      } else if (scen === 'junior-block') {
+        document.getElementById('sim-junior-block').classList.add('active');
+        // Red pulses targeting the clinical engine
+        packetList.forEach((p) => {
+          p.mesh.material.color.setHex(0xef4444);
+        });
+        updateInspector(NODES_DATA[3]);
+      } else if (scen === 'conflict') {
+        document.getElementById('sim-conflict').classList.add('active');
+        // Amber pulses on database & calendar
+        packetList.forEach((p) => {
+          p.mesh.material.color.setHex(0xf59e0b);
+        });
+        updateInspector(NODES_DATA[4]);
+      }
+    }
+
+    let isPaused = false;
+    document.getElementById('btn-pause').addEventListener('click', () => {
+      isPaused = !isPaused;
+      document.getElementById('btn-pause').textContent = isPaused ? '▶' : '⏸';
+      document.getElementById('btn-pause').classList.toggle('active', isPaused);
+    });
+
+    document.getElementById('close-inspector').addEventListener('click', () => {
+      document.getElementById('inspector-card').classList.add('opacity-0', 'pointer-events-none');
+    });
+
+    // FPS Meter
+    let frameTimes = [];
+    const fpsElem = document.getElementById('fps-counter');
+
+    // 9. Frame-Rate Independent Animation Loop & ?t=N Harness
+    const urlParams = new URLSearchParams(window.location.search);
+    const fixedT = urlParams.get('t');
+
+    const clock = new THREE.Clock();
+
+    function renderFrame(elapsed, dt = 0.016) {
+      // 1. Rotate Node outer rings
+      nodeGroup.children.forEach((g) => {
+        if (g.userData.ring) {
+          g.userData.ring.rotation.z = elapsed * 0.8;
+        }
+      });
+
+      // 2. Animate Data Packets along Curves
+      packetList.forEach((p) => {
+        const progress = ((elapsed * p.speed) + p.offset) % 1.0;
+        const pt = p.curve.getPoint(progress);
+        p.mesh.position.copy(pt);
+      });
+
+      // 3. Float background particles
+      particles.rotation.y = elapsed * 0.02;
+
+      // 4. Smooth Camera Transition
+      if (isTransitioningCamera) {
+        camera.position.lerp(targetCamPos, 0.05);
+        controls.target.lerp(targetLookAt, 0.05);
+        if (camera.position.distanceTo(targetCamPos) < 0.1) {
+          isTransitioningCamera = false;
+        }
+      }
+
+      controls.update();
+      renderer.render(scene, camera);
+    }
+
+    if (fixedT !== null) {
+      // Deterministic freeze frame for screenshot/QA testing (?t=1.5)
+      const tVal = parseFloat(fixedT);
+      renderFrame(tVal, 0.016);
+      window.__ready = true;
+    } else {
+      renderer.setAnimationLoop(() => {
+        if (isPaused) {
+          controls.update();
+          renderer.render(scene, camera);
+          return;
+        }
+
+        const dt = clock.getDelta();
+        const elapsed = clock.getElapsedTime();
+
+        // Calculate FPS
+        const now = performance.now();
+        frameTimes.push(now);
+        while (frameTimes.length > 0 && frameTimes[0] <= now - 1000) {
+          frameTimes.shift();
+        }
+        if (frameTimes.length % 15 === 0) {
+          fpsElem.textContent = frameTimes.length;
+        }
+
+        renderFrame(elapsed, dt);
+      });
+    }
+
+    // 10. Resize handler
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    });
+  </script>
+</body>
+</html>
