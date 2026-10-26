@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { InMemoryAppointmentRepository } from "@/repository/in-memory-appointment-repository";
+import { getRuntimeAppointmentRepository } from "@/repository/runtime-repositories";
+import { getRuntimeCalendarProvider } from "@/services/calendar-provider-cache";
 import { AppointmentService } from "@/services/appointment-service";
 import type { AppointmentRepository } from "@/repository/appointment-repository";
 import {
@@ -14,20 +15,6 @@ export type AppointmentsRouteDeps = {
   appointmentService?: AppointmentService;
 };
 
-let defaultRepository: AppointmentRepository | null = null;
-let defaultService: AppointmentService | null = null;
-
-function getDefaultDeps(): {
-  repository: AppointmentRepository;
-  appointmentService: AppointmentService;
-} {
-  if (!defaultRepository || !defaultService) {
-    defaultRepository = new InMemoryAppointmentRepository();
-    defaultService = new AppointmentService(defaultRepository);
-  }
-  return { repository: defaultRepository, appointmentService: defaultService };
-}
-
 const BookAppointmentSchema = z.object({
   patientName: z.string().min(2, "Patient name must be at least 2 characters"),
   patientPhone: z.string().min(6, "Patient phone must be at least 6 characters"),
@@ -38,12 +25,17 @@ const BookAppointmentSchema = z.object({
 });
 
 export function createAppointmentsHandlers(deps: AppointmentsRouteDeps = {}) {
-  const getDeps = () => {
-    const defaults = getDefaultDeps();
-    return {
-      repository: deps.repository || defaults.repository,
-      appointmentService: deps.appointmentService || defaults.appointmentService,
-    };
+  // Production defaults resolve the PostgreSQL-backed repository and the
+  // provider-configured service lazily, per request. There is deliberately no
+  // in-memory fallback; tests inject their own dependencies instead.
+  const getRepository = () => deps.repository ?? getRuntimeAppointmentRepository();
+
+  const getAppointmentService = async (repository: AppointmentRepository) => {
+    if (deps.appointmentService) {
+      return deps.appointmentService;
+    }
+    const calendarProvider = await getRuntimeCalendarProvider();
+    return new AppointmentService(repository, calendarProvider);
   };
 
   const GET = async (request: Request): Promise<Response> => {
@@ -61,8 +53,9 @@ export function createAppointmentsHandlers(deps: AppointmentsRouteDeps = {}) {
         );
       }
 
-      const { repository } = getDeps();
-      const appointments = await repository.find({
+      // Public listings expose confirmed records only; pending reservations and
+      // failed records stay internal. Reading them needs no calendar provider.
+      const appointments = await getRepository().find({
         date: dateParam,
         status: "confirmed",
       });
@@ -97,7 +90,8 @@ export function createAppointmentsHandlers(deps: AppointmentsRouteDeps = {}) {
         );
       }
 
-      const { appointmentService } = getDeps();
+      const repository = getRepository();
+      const appointmentService = await getAppointmentService(repository);
       const appointment = await appointmentService.bookAppointment(validation.data);
 
       return NextResponse.json(
@@ -115,9 +109,12 @@ export function createAppointmentsHandlers(deps: AppointmentsRouteDeps = {}) {
         );
       }
       if (err instanceof AppointmentError) {
+        // The reservation was released, so retrying is safe; the upstream
+        // calendar is the failing component.
+        const status = err.code === "CALENDAR_SYNC_FAILED" ? 502 : 400;
         return NextResponse.json(
           { success: false, error: err.message, code: err.code },
-          { status: 400 },
+          { status },
         );
       }
       const message = err instanceof Error ? err.message : String(err);

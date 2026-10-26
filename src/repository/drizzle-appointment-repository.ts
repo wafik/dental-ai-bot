@@ -1,34 +1,27 @@
-import { and, eq, type SQL } from "drizzle-orm";
-import { drizzle, type PostgresJsDatabase } from "drizzle-orm/postgres-js";
-import postgres from "postgres";
+import { and, eq, inArray, sql, type SQL } from "drizzle-orm";
+import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import {
   AppointmentNotFoundError,
+  SlotUnavailableError,
   type AppointmentRecord,
   type AppointmentStatus,
 } from "../domain/appointment";
 import type { DentalService } from "../domain/clinic";
 import type { AppointmentFilter, AppointmentRepository } from "./appointment-repository";
+import { getDb } from "./db";
 import { appointments, type AppointmentRow } from "./schema";
+
+/** Statuses that occupy a dentist's time and must block overlapping reservations. */
+const ACTIVE_STATUSES: AppointmentStatus[] = ["pending", "confirmed"];
 
 /**
  * PostgreSQL appointment repository implementation backed by Drizzle ORM.
  */
 export class DrizzleAppointmentRepository implements AppointmentRepository {
-  // biome-ignore lint/suspicious/noExplicitAny: Drizzle schema-agnostic DB type
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private readonly db: PostgresJsDatabase<any>;
+  private readonly db: PostgresJsDatabase<Record<string, never>>;
 
-  // biome-ignore lint/suspicious/noExplicitAny: Drizzle schema-agnostic DB type
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  constructor(db?: PostgresJsDatabase<any>) {
-    if (db) {
-      this.db = db;
-    } else {
-      const connectionString =
-        process.env.DATABASE_URL ?? process.env.POSTGRES_URL ?? "postgres://localhost:5432/dental";
-      const client = postgres(connectionString);
-      this.db = drizzle(client);
-    }
+  constructor(db?: PostgresJsDatabase<Record<string, never>>) {
+    this.db = db ?? getDb();
   }
 
   async create(record: AppointmentRecord): Promise<AppointmentRecord> {
@@ -51,6 +44,77 @@ export class DrizzleAppointmentRepository implements AppointmentRepository {
     return { ...record };
   }
 
+  /**
+   * Reserves a `pending` row inside a transaction guarded by a per-dentist/date
+   * advisory lock, so concurrent API instances cannot both pass the overlap check.
+   * The lock is released automatically when the transaction ends.
+   */
+  async reserveIfAvailable(record: AppointmentRecord): Promise<AppointmentRecord> {
+    await this.db.transaction(async (tx) => {
+      await tx.execute(
+        sql`SELECT pg_advisory_xact_lock(hashtext(${`${record.dentistId}:${record.date}`}))`,
+      );
+
+      const existing = await tx
+        .select()
+        .from(appointments)
+        .where(
+          and(
+            eq(appointments.dentistId, record.dentistId),
+            eq(appointments.date, record.date),
+            inArray(appointments.status, ACTIVE_STATUSES),
+          ),
+        );
+
+      const conflict = existing.some(
+        (row: AppointmentRow) => record.startTime < row.endTime && record.endTime > row.startTime,
+      );
+
+      if (conflict) {
+        throw new SlotUnavailableError(
+          `The requested slot on ${record.date} at ${record.startTime} is not available.`,
+        );
+      }
+
+      await tx.insert(appointments).values({
+        id: record.id,
+        patientName: record.patientName,
+        patientPhone: record.patientPhone,
+        serviceCode: record.serviceCode,
+        dentistId: record.dentistId,
+        date: record.date,
+        startTime: record.startTime,
+        endTime: record.endTime,
+        status: "pending",
+        calendarEventId: null,
+        createdAt: record.createdAt,
+        updatedAt: record.updatedAt,
+        cancelledAt: null,
+      });
+    });
+
+    return { ...record, status: "pending" };
+  }
+
+  async confirm(id: string, calendarEventId?: string): Promise<AppointmentRecord> {
+    const now = new Date().toISOString();
+    const updatedRows = await this.db
+      .update(appointments)
+      .set({
+        status: "confirmed",
+        updatedAt: now,
+        ...(calendarEventId !== undefined ? { calendarEventId } : {}),
+      })
+      .where(eq(appointments.id, id))
+      .returning();
+
+    if (updatedRows.length === 0) {
+      throw new AppointmentNotFoundError(id);
+    }
+
+    return this.toRecord(updatedRows[0]!);
+  }
+
   async findById(id: string): Promise<AppointmentRecord | null> {
     const rows = await this.db.select().from(appointments).where(eq(appointments.id, id)).limit(1);
 
@@ -71,7 +135,11 @@ export class DrizzleAppointmentRepository implements AppointmentRepository {
       conditions.push(eq(appointments.date, filter.date));
     }
     if (filter.status !== undefined) {
-      conditions.push(eq(appointments.status, filter.status));
+      conditions.push(
+        Array.isArray(filter.status)
+          ? inArray(appointments.status, filter.status)
+          : eq(appointments.status, filter.status),
+      );
     }
 
     let query = this.db.select().from(appointments);

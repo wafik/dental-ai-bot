@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import {
+  AppointmentError,
   DentistQualificationError,
   SlotUnavailableError,
   AppointmentNotFoundError,
@@ -111,10 +112,11 @@ export class AppointmentService {
       return [];
     }
 
-    // 1. Fetch confirmed internal appointments from repository for the date
+    // 1. Fetch active internal appointments (pending reservations and confirmed
+    //    bookings both occupy the dentist's time)
     const repoAppointments = await this.repository.find({
       date: input.date,
-      status: "confirmed",
+      status: ["pending", "confirmed"],
     });
 
     const localRepoAppointments: Appointment[] = repoAppointments.map((rec) => ({
@@ -228,15 +230,9 @@ export class AppointmentService {
     const startUtc = localToUtcIso(input.date, input.startTime, this.timeZone);
     const endUtc = localToUtcIso(input.date, endTime, this.timeZone);
 
-    // Sync with external calendar
-    const createdEvent = await this.calendarProvider.createEvent({
-      dentistId: input.dentistId,
-      summary: `Dental Appointment: ${service.name} - ${input.patientName}`,
-      description: `Patient: ${input.patientName} (${input.patientPhone})\nService: ${service.name} (${service.code})`,
-      start: startUtc,
-      end: endUtc,
-    });
-
+    // Reserve the slot atomically before touching the external calendar. The
+    // reservation is what closes the race between the availability check above
+    // and the write below; the pre-check only rejects obviously busy slots fast.
     const now = new Date().toISOString();
     const newRecord: AppointmentRecord = {
       id: randomUUID(),
@@ -247,13 +243,41 @@ export class AppointmentService {
       date: input.date,
       startTime: input.startTime,
       endTime,
-      status: "confirmed",
-      calendarEventId: createdEvent.id,
+      status: "pending",
+      calendarEventId: undefined,
       createdAt: now,
       updatedAt: now,
     };
 
-    return this.repository.create(newRecord);
+    const reserved = await this.repository.reserveIfAvailable(newRecord);
+
+    // Sync with external calendar
+    let createdEvent: { id: string };
+    try {
+      createdEvent = await this.calendarProvider.createEvent({
+        dentistId: input.dentistId,
+        summary: `Dental Appointment: ${service.name} - ${input.patientName}`,
+        description: `Patient: ${input.patientName} (${input.patientPhone})\nService: ${service.name} (${service.code})`,
+        start: startUtc,
+        end: endUtc,
+      });
+    } catch {
+      try {
+        // Release the reservation so it stops blocking availability.
+        await this.repository.updateStatus(reserved.id, "failed");
+      } catch {
+        // Releasing failed too; the reservation stays pending and therefore
+        // busy, which is safer than risking a double booking. The caller still
+        // receives the safe error below.
+      }
+      // The provider error itself is deliberately not surfaced to the caller.
+      throw new AppointmentError(
+        "Calendar synchronization failed. Please try again.",
+        "CALENDAR_SYNC_FAILED",
+      );
+    }
+
+    return this.repository.confirm(reserved.id, createdEvent.id);
   }
 
   /**
