@@ -23,6 +23,11 @@ export type AdminSettingsRouteDeps = {
   env?: Record<string, string | undefined>;
 };
 
+const endpointSchema = z.object({
+  baseUrl: z.string().trim().max(512),
+  model: z.string().trim().max(128),
+});
+
 const updateSchema = z.object({
   calendarProvider: z.enum(["none", "google", "outlook"]),
   dentistMappings: z
@@ -36,6 +41,8 @@ const updateSchema = z.object({
       }),
     )
     .max(6),
+  // A blank value means "keep using the environment or the default".
+  ai: endpointSchema.optional(),
   secrets: z.record(z.string(), z.string().max(8192)).optional(),
 });
 
@@ -64,6 +71,7 @@ export function createAdminSettingsHandlers(deps: AdminSettingsRouteDeps = {}) {
       const settings = await readAdminSettings({
         settingsRepository: resolved.settingsRepository,
         secretRepository: resolved.secretRepository,
+        env: resolved.env,
       });
 
       return jsonNoStore({ success: true, settings }, 200);
@@ -112,6 +120,7 @@ export function createAdminSettingsHandlers(deps: AdminSettingsRouteDeps = {}) {
         {
           settingsRepository: resolved.settingsRepository,
           secretRepository: resolved.secretRepository,
+          env: resolved.env,
         },
         parsed.data,
       );

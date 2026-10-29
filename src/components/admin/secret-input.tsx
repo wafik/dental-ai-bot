@@ -3,7 +3,9 @@
 import * as React from "react";
 import { Eye, EyeOff } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { Field, FieldError, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { cn } from "@/lib/utils";
 
 export type SecretInputProps = {
   id: string;
@@ -12,6 +14,8 @@ export type SecretInputProps = {
   value: string;
   onChange: (value: string) => void;
   placeholder?: string;
+  /** Realtime validation message rendered directly below the field. */
+  error?: string;
   onTest?: () => void;
   testDisabled?: boolean;
 };
@@ -29,6 +33,7 @@ export function SecretInput({
   value,
   onChange,
   placeholder,
+  error,
   onTest,
   testDisabled,
 }: SecretInputProps) {
@@ -42,11 +47,11 @@ export function SecretInput({
   }, [hasDraft]);
 
   return (
-    <div className="flex flex-col gap-1.5">
+    <Field data-invalid={Boolean(error)} className="gap-1.5">
       <div className="flex items-center justify-between gap-2">
-        <label htmlFor={id} className="text-sm font-medium text-foreground">
+        <FieldLabel htmlFor={id} className="text-foreground">
           {label}
-        </label>
+        </FieldLabel>
         {isConfigured && !hasDraft ? <Badge variant="success">Configured</Badge> : null}
       </div>
 
@@ -59,7 +64,9 @@ export function SecretInput({
           value={value}
           placeholder={isConfigured && !hasDraft ? CONFIGURED_PLACEHOLDER : placeholder}
           onChange={(event) => onChange(event.target.value)}
-          className="pr-10"
+          aria-invalid={Boolean(error)}
+          aria-describedby={error ? `${id}-error` : undefined}
+          className={cn("pr-10", error && "border-destructive focus-visible:ring-destructive")}
         />
         {hasDraft ? (
           <button
@@ -74,6 +81,10 @@ export function SecretInput({
         ) : null}
       </div>
 
+      <FieldError id={`${id}-error`} className="text-xs">
+        {error}
+      </FieldError>
+
       {onTest ? (
         <div className="flex justify-end">
           <button
@@ -86,6 +97,6 @@ export function SecretInput({
           </button>
         </div>
       ) : null}
-    </div>
+    </Field>
   );
 }

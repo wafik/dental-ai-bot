@@ -13,9 +13,54 @@ export type AdminDentistMapping = {
   isActive: boolean;
 };
 
+/** The editable shape a mapping takes while it is being changed on screen. */
+export type CalendarMappingDraft = {
+  dentistId: DentistId;
+  provider: MappingProviderId;
+  calendarId: string;
+};
+
+export type AiSettings = { baseUrl: string; model: string };
+
+/** Last-resort endpoint and model, shared by the view, runtime config, and adapter. */
+export const AI_SETTINGS_DEFAULTS: AiSettings = {
+  baseUrl: "https://api.openai.com/v1",
+  model: "gpt-4o-mini",
+};
+
+/** Clinic-setting keys that persist the AI endpoint. Names match the env vars. */
+export const AI_SETTING_KEYS = {
+  baseUrl: "OPENAI_BASE_URL",
+  model: "OPENAI_MODEL",
+} as const;
+
+export type AiFieldDef = {
+  key: keyof AiSettings;
+  label: string;
+  placeholder: string;
+  hint: string;
+};
+
+/** The editable, non-secret half of the OpenAI configuration. */
+export const AI_FIELDS: AiFieldDef[] = [
+  {
+    key: "baseUrl",
+    label: "Base URL",
+    placeholder: AI_SETTINGS_DEFAULTS.baseUrl,
+    hint: "OpenAI-compatible endpoint. Leave blank to use the environment value or the default.",
+  },
+  {
+    key: "model",
+    label: "Model",
+    placeholder: AI_SETTINGS_DEFAULTS.model,
+    hint: "Model name sent to the endpoint. Leave blank to use the default.",
+  },
+];
+
 export type AdminSettingsView = {
   calendarProvider: CalendarProviderId;
   dentistMappings: AdminDentistMapping[];
+  ai: AiSettings;
   secrets: Record<string, SecretMetadataView>;
 };
 
@@ -26,6 +71,7 @@ export type AdminSettingsUpdate = {
     provider: MappingProviderId;
     calendarId: string;
   }>;
+  ai?: AiSettings;
   secrets?: Record<string, string>;
 };
 
@@ -51,18 +97,28 @@ export const SECRET_GROUPS: SecretGroupDef[] = [
     testProvider: "google",
     fields: [
       {
+        key: "google.serviceAccountEmail",
+        label: "Service Account Email",
+        placeholder: "name@project.iam.gserviceaccount.com",
+      },
+      {
+        key: "google.serviceAccountPrivateKey",
+        label: "Service Account Private Key",
+        placeholder: "-----BEGIN PRIVATE KEY-----",
+      },
+      {
         key: "google.clientId",
-        label: "Client ID",
+        label: "OAuth Client ID (delegated)",
         placeholder: "....apps.googleusercontent.com",
       },
       {
         key: "google.clientSecret",
-        label: "Client Secret",
+        label: "OAuth Client Secret (delegated)",
         placeholder: "Google OAuth client secret",
       },
       {
         key: "google.refreshToken",
-        label: "Refresh Token",
+        label: "OAuth Refresh Token (delegated)",
         placeholder: "Google OAuth refresh token",
       },
     ],
@@ -89,3 +145,16 @@ export const SECRET_GROUPS: SecretGroupDef[] = [
 ];
 
 export const CALENDAR_PROVIDER_SETTING = "CALENDAR_PROVIDER";
+
+export const CALENDAR_PROVIDER_LABELS: Record<CalendarProviderId, string> = {
+  none: "None (external calendar disabled)",
+  google: "Google Calendar",
+  outlook: "Outlook / Microsoft Graph",
+};
+
+/** Display names for the fixed dentist ids, shared by every admin section. */
+export const DENTIST_LABELS: Record<DentistId, string> = {
+  junior: "Dr. Junior",
+  "senior-1": "Dr. Senior 1",
+  "senior-2": "Dr. Senior 2",
+};

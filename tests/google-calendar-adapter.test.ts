@@ -1,4 +1,5 @@
 import { describe, expect, it, mock } from "bun:test";
+import { createVerify, generateKeyPairSync } from "node:crypto";
 import { GoogleCalendarAdapter } from "../src/providers/calendar/google-calendar-adapter";
 import { CalendarProviderError } from "../src/providers/calendar/calendar-error";
 import type { GoogleCalendarConfig } from "../src/config/calendar";
@@ -310,6 +311,143 @@ describe("GoogleCalendarAdapter", () => {
         expect(providerError.provider).toBe("google");
         expect(providerError.operation).toBe("createEvent");
         expect(providerError.status).toBe(403);
+      }
+    });
+  });
+
+  describe("Service-account auth", () => {
+    // Generated in-process so the suite never depends on a real cloud key.
+    const { privateKey, publicKey } = generateKeyPairSync("rsa", {
+      modulusLength: 2048,
+      publicKeyEncoding: { type: "spki", format: "pem" },
+      privateKeyEncoding: { type: "pkcs8", format: "pem" },
+    });
+
+    const serviceAccountConfig: GoogleCalendarConfig = {
+      serviceAccountEmail: "dentist@project.iam.gserviceaccount.com",
+      privateKey,
+      calendarIds: dummyConfig.calendarIds,
+    };
+
+    function decodeSegment(segment: string): string {
+      return Buffer.from(segment.replace(/-/g, "+").replace(/_/g, "/"), "base64").toString("utf8");
+    }
+
+    it("exchanges a signed JWT assertion instead of a refresh token", async () => {
+      let tokenBody = "";
+      const mockFetch = createMockFetch({
+        tokenHandler: async (req) => {
+          tokenBody = await req.text();
+          return new Response(JSON.stringify({ access_token: "sa-token", expires_in: 3600 }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          });
+        },
+        apiHandler: async () =>
+          new Response(
+            JSON.stringify({
+              calendars: { "junior-calendar@group.calendar.google.com": { busy: [] } },
+            }),
+            {
+              status: 200,
+              headers: { "Content-Type": "application/json" },
+            },
+          ),
+      });
+
+      const adapter = new GoogleCalendarAdapter(
+        serviceAccountConfig,
+        mockFetch as unknown as typeof fetch,
+      );
+      await adapter.getBusyIntervals({
+        dentistId: "junior",
+        start: "2026-10-25T09:00:00Z",
+        end: "2026-10-25T10:00:00Z",
+      });
+
+      const params = new URLSearchParams(tokenBody);
+      expect(params.get("grant_type")).toBe("urn:ietf:params:oauth:grant-type:jwt-bearer");
+      expect(params.get("refresh_token")).toBeNull();
+
+      const [headerB64, claimsB64, signatureB64] = params.get("assertion")!.split(".");
+      expect(JSON.parse(decodeSegment(headerB64!))).toEqual({ alg: "RS256", typ: "JWT" });
+
+      const claims = JSON.parse(decodeSegment(claimsB64!));
+      expect(claims.iss).toBe("dentist@project.iam.gserviceaccount.com");
+      expect(claims.scope).toBe("https://www.googleapis.com/auth/calendar");
+      expect(claims.aud).toBe("https://oauth2.googleapis.com/token");
+      expect(claims.exp - claims.iat).toBe(3600);
+
+      // The signature must verify against the matching public key.
+      const verifier = createVerify("RSA-SHA256");
+      verifier.update(`${headerB64}.${claimsB64}`);
+      expect(verifier.verify(publicKey, Buffer.from(signatureB64!, "base64"))).toBe(true);
+    });
+
+    it("accepts escaped newlines in the stored private key", async () => {
+      let tokenBody = "";
+      const mockFetch = createMockFetch({
+        tokenHandler: async (req) => {
+          tokenBody = await req.text();
+          return new Response(JSON.stringify({ access_token: "sa-token", expires_in: 3600 }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          });
+        },
+        apiHandler: async () =>
+          new Response(
+            JSON.stringify({
+              calendars: { "junior-calendar@group.calendar.google.com": { busy: [] } },
+            }),
+            {
+              status: 200,
+              headers: { "Content-Type": "application/json" },
+            },
+          ),
+      });
+
+      const adapter = new GoogleCalendarAdapter(
+        { ...serviceAccountConfig, privateKey: privateKey.replace(/\n/g, "\\n") },
+        mockFetch as unknown as typeof fetch,
+      );
+      const busy = await adapter.getBusyIntervals({
+        dentistId: "junior",
+        start: "2026-10-25T09:00:00Z",
+        end: "2026-10-25T10:00:00Z",
+      });
+
+      expect(busy).toEqual([]);
+      expect(new URLSearchParams(tokenBody).get("assertion")).toBeTruthy();
+    });
+
+    it("throws CalendarProviderError without leaking the assertion when exchange fails", async () => {
+      const mockFetch = createMockFetch({
+        tokenHandler: async () =>
+          new Response(JSON.stringify({ error: "invalid_grant" }), { status: 401 }),
+      });
+
+      const adapter = new GoogleCalendarAdapter(
+        serviceAccountConfig,
+        mockFetch as unknown as typeof fetch,
+      );
+
+      try {
+        await adapter.createEvent({
+          dentistId: "junior",
+          summary: "Checkup",
+          description: "Routine check",
+          start: "2026-10-25T10:00:00Z",
+          end: "2026-10-25T11:00:00Z",
+        });
+        expect.unreachable("should have thrown");
+      } catch (err: unknown) {
+        expect(err).toBeInstanceOf(CalendarProviderError);
+        const providerError = err as CalendarProviderError;
+        expect(providerError.operation).toBe("refreshToken");
+        expect(providerError.status).toBe(401);
+        expect(providerError.message).not.toContain("PRIVATE KEY");
+        expect(providerError.message).not.toContain("eyJ");
+        expect(providerError.message).not.toContain("dentist@project");
       }
     });
   });

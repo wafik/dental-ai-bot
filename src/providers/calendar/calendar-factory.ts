@@ -18,6 +18,8 @@ const GOOGLE_CREDENTIAL_KEYS: readonly SecretKey[] = [
   SECRET_KEYS.googleClientId,
   SECRET_KEYS.googleClientSecret,
   SECRET_KEYS.googleRefreshToken,
+  SECRET_KEYS.googleServiceAccountEmail,
+  SECRET_KEYS.googleServiceAccountPrivateKey,
 ];
 
 const MICROSOFT_CREDENTIAL_KEYS: readonly SecretKey[] = [
@@ -81,14 +83,6 @@ export async function resolveCalendarProvider(
   if (activeProvider === "google") {
     const resolvedEnv = await resolveCredentialEnv(env, secretRepo, GOOGLE_CREDENTIAL_KEYS);
 
-    const clientId = resolvedEnv.GOOGLE_CLIENT_ID?.trim();
-    const clientSecret = resolvedEnv.GOOGLE_CLIENT_SECRET?.trim();
-    const refreshToken = resolvedEnv.GOOGLE_REFRESH_TOKEN?.trim();
-
-    if (!clientId || !clientSecret || !refreshToken) {
-      return new NoopCalendarProvider();
-    }
-
     // Resolve dentist calendar IDs from DB with env fallback
     const calendarIds = await resolveDentistMappings("google", settingsRepo, {
       junior: resolvedEnv.GOOGLE_CALENDAR_JUNIOR?.trim() ?? "",
@@ -97,6 +91,27 @@ export async function resolveCalendarProvider(
     });
 
     if (!calendarIds.junior || !calendarIds["senior-1"] || !calendarIds["senior-2"]) {
+      return new NoopCalendarProvider();
+    }
+
+    const serviceAccountEmail = resolvedEnv.GOOGLE_SERVICE_ACCOUNT_EMAIL?.trim();
+    const privateKey = resolvedEnv.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY?.trim();
+
+    // Service-account auth wins when configured; it needs no refresh token.
+    if (serviceAccountEmail && privateKey) {
+      return new GoogleCalendarAdapter({
+        serviceAccountEmail,
+        // Stored secrets keep real newlines; env values are usually escaped.
+        privateKey: privateKey.replace(/\\n/g, "\n"),
+        calendarIds,
+      });
+    }
+
+    const clientId = resolvedEnv.GOOGLE_CLIENT_ID?.trim();
+    const clientSecret = resolvedEnv.GOOGLE_CLIENT_SECRET?.trim();
+    const refreshToken = resolvedEnv.GOOGLE_REFRESH_TOKEN?.trim();
+
+    if (!clientId || !clientSecret || !refreshToken) {
       return new NoopCalendarProvider();
     }
 

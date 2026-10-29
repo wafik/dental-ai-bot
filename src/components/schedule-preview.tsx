@@ -5,46 +5,94 @@ import { DENTISTS, SERVICES } from "@/domain/clinic";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Field, FieldError, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import {
-  Calendar,
-  RefreshCw,
-  User,
-  Clock,
-  CheckCircle2,
-  ShieldCheck,
-  Stethoscope,
-} from "lucide-react";
+import { cn } from "@/lib/utils";
+import { collectFieldErrors, scheduleDateSchema } from "@/utils/form-validation";
+import { AlertTriangle, CalendarDays, Clock, RefreshCw, ShieldCheck } from "lucide-react";
 import type { AppointmentRecord } from "@/domain/appointment";
 
 export type SchedulePreviewProps = {
   initialDate?: string;
 };
 
-const PROVIDER_METADATA: Record<string, { title: string; subtitle: string; scopeBadge: string }> = {
-  junior: {
-    title: "Dr. Junior",
-    subtitle: "General Dentist",
-    scopeBadge: "Services A & B",
-  },
-  "senior-1": {
-    title: "Dr. Senior 1",
-    subtitle: "Lead Specialist",
-    scopeBadge: "Full Scope (A–E)",
-  },
-  "senior-2": {
-    title: "Dr. Senior 2",
-    subtitle: "Consultant Surgeon",
-    scopeBadge: "Full Scope (A–E)",
-  },
+// Mirrors DEFAULT_WORKING_HOURS in the appointment service. The domain module
+// that owns those values also pulls in server-only code, so they are restated
+// here for the client render.
+const DAY_START_MINUTES = 9 * 60;
+const DAY_END_MINUTES = 17 * 60;
+const SLOT_MINUTES = 30;
+const TOTAL_MINUTES = DAY_END_MINUTES - DAY_START_MINUTES;
+const TOTAL_SLOTS = TOTAL_MINUTES / SLOT_MINUTES;
+const SLOT_PERCENT = 100 / TOTAL_SLOTS;
+
+const HOUR_MARKS = Array.from(
+  { length: TOTAL_MINUTES / 60 + 1 },
+  (_, index) => DAY_START_MINUTES + index * 60,
+);
+
+const PROVIDER_METADATA: Record<string, { subtitle: string; scope: string }> = {
+  junior: { subtitle: "General Dentist", scope: "Services A & B" },
+  "senior-1": { subtitle: "Lead Specialist", scope: "Full Scope (A–E)" },
+  "senior-2": { subtitle: "Consultant Surgeon", scope: "Full Scope (A–E)" },
 };
+
+const ROW_GRID = "grid grid-cols-[minmax(170px,210px)_minmax(0,1fr)_68px] items-center gap-3";
+
+function toMinutes(time: string): number {
+  const [hours, minutes] = time.split(":").map(Number);
+  return (hours ?? 0) * 60 + (minutes ?? 0);
+}
+
+function toLabel(minutes: number): string {
+  const hours = Math.floor(minutes / 60)
+    .toString()
+    .padStart(2, "0");
+  const mins = (minutes % 60).toString().padStart(2, "0");
+  return `${hours}:${mins}`;
+}
+
+/** Clamps an appointment to clinic hours and converts it to track geometry. */
+function blockGeometry(appointment: AppointmentRecord) {
+  const start = Math.max(toMinutes(appointment.startTime), DAY_START_MINUTES);
+  const end = Math.min(toMinutes(appointment.endTime), DAY_END_MINUTES);
+  const left = ((start - DAY_START_MINUTES) / TOTAL_MINUTES) * 100;
+  const width = ((end - start) / TOTAL_MINUTES) * 100;
+  return { left, width };
+}
+
+/** Counts distinct 30-min grid cells covered by any active booking. */
+function bookedSlotCount(appointments: AppointmentRecord[]): number {
+  let covered = 0;
+  for (let index = 0; index < TOTAL_SLOTS; index += 1) {
+    const slotStart = DAY_START_MINUTES + index * SLOT_MINUTES;
+    const slotEnd = slotStart + SLOT_MINUTES;
+    const overlaps = appointments.some(
+      (appointment) =>
+        toMinutes(appointment.startTime) < slotEnd && slotStart < toMinutes(appointment.endTime),
+    );
+    if (overlaps) covered += 1;
+  }
+  return covered;
+}
+
+function formatDayLabel(date: string): string {
+  const parsed = new Date(`${date}T00:00:00`);
+  if (Number.isNaN(parsed.getTime())) return date;
+  return parsed.toLocaleDateString("en-GB", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
+}
 
 export function SchedulePreview({ initialDate }: SchedulePreviewProps) {
   const [selectedDate, setSelectedDate] = useState<string>(
     initialDate || new Date().toISOString().split("T")[0] || "2026-10-28",
   );
   const [appointments, setAppointments] = useState<AppointmentRecord[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const fetchSchedule = async (date: string) => {
@@ -70,165 +118,216 @@ export function SchedulePreview({ initialDate }: SchedulePreviewProps) {
     fetchSchedule(selectedDate);
   }, [selectedDate]);
 
-  const getServiceName = (code: string) => {
-    return SERVICES.find((s) => s.code === code)?.name || `Service ${code}`;
-  };
+  const getServiceName = (code: string) =>
+    SERVICES.find((service) => service.code === code)?.name || `Service ${code}`;
 
-  const totalBookedToday = appointments.filter((a) => a.status === "confirmed").length;
+  const confirmed = appointments.filter((appointment) => appointment.status === "confirmed");
+  const totalSlots = TOTAL_SLOTS * DENTISTS.length;
+  const bookedSlots = DENTISTS.reduce(
+    (sum, dentist) =>
+      sum +
+      bookedSlotCount(confirmed.filter((appointment) => appointment.dentistId === dentist.id)),
+    0,
+  );
+  const freeSlots = totalSlots - bookedSlots;
+  const dateError = collectFieldErrors(scheduleDateSchema, { date: selectedDate }).date;
 
   return (
-    <Card className="w-full shadow-xs border">
-      <CardHeader className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-4 border-b">
-        <div>
-          <div className="flex items-center gap-2">
-            <Calendar className="w-5 h-5 text-primary" />
-            <CardTitle className="text-base font-semibold">
-              Dentist Schedules & Real-Time Availability
-            </CardTitle>
-            <Badge variant="outline" className="text-[11px] font-normal">
-              {totalBookedToday} Booked Total
+    <Card className="@container w-full overflow-hidden">
+      <CardHeader className="flex flex-col gap-4 border-b pb-4 @md:flex-row @md:items-center @md:justify-between">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <CalendarDays className="size-5 shrink-0 text-primary" aria-hidden="true" />
+            <CardTitle className="text-base">Dentist Schedule</CardTitle>
+            <Badge variant="success">
+              {freeSlots} of {totalSlots} slots free
             </Badge>
           </div>
-          <CardDescription className="text-xs mt-1">
-            Clinic hours 09:00 – 17:00 (Asia/Jakarta). Showing real-time confirmed bookings.
+          <CardDescription className="mt-1 text-xs">
+            {formatDayLabel(selectedDate)} · clinic hours {toLabel(DAY_START_MINUTES)}–
+            {toLabel(DAY_END_MINUTES)} · confirmed bookings only
           </CardDescription>
         </div>
 
-        <div className="flex items-center gap-2">
-          <div className="flex items-center gap-1.5 bg-muted/30 px-2 py-1 rounded-md border">
-            <span className="text-[11px] text-muted-foreground font-medium">Date:</span>
+        <Field data-invalid={Boolean(dateError)} className="w-auto gap-1">
+          <FieldLabel htmlFor="schedule-date" className="sr-only">
+            Schedule date
+          </FieldLabel>
+          <div className="flex items-center gap-2">
             <Input
+              id="schedule-date"
               type="date"
               value={selectedDate}
-              onChange={(e) => setSelectedDate(e.target.value)}
-              className="w-36 text-xs h-7 bg-background border-none shadow-none focus-visible:ring-1"
+              onChange={(event) => setSelectedDate(event.target.value)}
+              aria-invalid={Boolean(dateError)}
+              aria-describedby={dateError ? "schedule-date-error" : undefined}
+              className={cn(
+                "h-8 w-40 text-xs",
+                dateError && "border-destructive focus-visible:ring-destructive",
+              )}
             />
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => fetchSchedule(selectedDate)}
+              disabled={loading || Boolean(dateError)}
+            >
+              <RefreshCw className={cn("size-3.5", loading && "animate-spin")} aria-hidden="true" />
+              <span className="sr-only @md:not-sr-only">Refresh</span>
+            </Button>
           </div>
-          <Button
-            size="sm"
-            variant="outline"
-            className="h-9 px-2.5 gap-1.5 text-xs"
-            onClick={() => fetchSchedule(selectedDate)}
-            disabled={loading}
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />
-            <span className="hidden sm:inline">Refresh</span>
-          </Button>
-        </div>
+          <FieldError id="schedule-date-error" className="text-xs">
+            {dateError}
+          </FieldError>
+        </Field>
       </CardHeader>
 
-      <CardContent className="space-y-4 pt-4">
+      <CardContent className="space-y-3 pt-4">
         {error && (
-          <div className="p-3 text-xs rounded-md bg-destructive/10 text-destructive border border-destructive/20">
+          <div
+            role="alert"
+            className="flex items-start gap-2 rounded-md border border-destructive/20 bg-destructive/10 p-3 text-xs text-destructive"
+          >
+            <AlertTriangle className="mt-px size-3.5 shrink-0" aria-hidden="true" />
             {error}
           </div>
         )}
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {DENTISTS.map((dentist) => {
-            const dentistAppointments = appointments.filter(
-              (apt) => apt.dentistId === dentist.id && apt.status === "confirmed",
-            );
-            const meta = PROVIDER_METADATA[dentist.id] || {
-              title: dentist.name,
-              subtitle: dentist.role,
-              scopeBadge: "Dental Provider",
-            };
-            const isFullyAvailable = dentistAppointments.length === 0;
+        <div className="overflow-x-auto">
+          <div className="min-w-[640px] space-y-0.5">
+            {/* Hour ruler — shares the row grid so ticks line up with tracks. */}
+            <div className={cn(ROW_GRID, "pb-1")} aria-hidden="true">
+              <span />
+              <div className="relative h-4 border-b border-border">
+                {HOUR_MARKS.map((mark, index) => (
+                  <span
+                    key={mark}
+                    className={cn(
+                      "absolute top-0 text-[10px] tabular-nums text-muted-foreground",
+                      index === 0 && "translate-x-0",
+                      index === HOUR_MARKS.length - 1 && "-translate-x-full",
+                      index > 0 && index < HOUR_MARKS.length - 1 && "-translate-x-1/2",
+                    )}
+                    style={{ left: `${((mark - DAY_START_MINUTES) / TOTAL_MINUTES) * 100}%` }}
+                  >
+                    {toLabel(mark)}
+                  </span>
+                ))}
+              </div>
+              <span />
+            </div>
 
-            return (
-              <div
-                key={dentist.id}
-                className="rounded-xl border bg-card/60 p-4 flex flex-col justify-between gap-3 shadow-xs hover:border-primary/40 transition-colors"
-              >
-                {/* Header section with Doctor identity and badge */}
-                <div className="space-y-2 border-b pb-3">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="flex items-center gap-2.5">
-                      <div className="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center shrink-0">
-                        <User className="w-4 h-4" />
+            {loading
+              ? DENTISTS.map((dentist) => (
+                  <div key={dentist.id} className={cn(ROW_GRID, "py-3")}>
+                    <div className="h-9 animate-pulse rounded-md bg-muted" />
+                    <div className="h-11 animate-pulse rounded-md bg-muted/60" />
+                    <div className="h-4 animate-pulse rounded bg-muted" />
+                  </div>
+                ))
+              : DENTISTS.map((dentist) => {
+                  const meta = PROVIDER_METADATA[dentist.id] ?? {
+                    subtitle: dentist.role === "senior" ? "Senior Dentist" : "Junior Dentist",
+                    scope: "Dental Provider",
+                  };
+                  const dentistAppointments = confirmed.filter(
+                    (appointment) => appointment.dentistId === dentist.id,
+                  );
+                  const booked = bookedSlotCount(dentistAppointments);
+                  const free = TOTAL_SLOTS - booked;
+
+                  return (
+                    <div
+                      key={dentist.id}
+                      className={cn(
+                        ROW_GRID,
+                        "rounded-lg border border-transparent py-3 transition-colors hover:border-border hover:bg-muted/30",
+                      )}
+                    >
+                      <div className="flex min-w-0 items-center gap-2.5 pl-1">
+                        <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[11px] font-semibold text-primary">
+                          {dentist.name
+                            .split(" ")
+                            .map((part) => part[0])
+                            .join("")
+                            .slice(0, 2)}
+                        </div>
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-semibold leading-tight">
+                            Dr. {dentist.name}
+                          </p>
+                          <p className="truncate text-[11px] text-muted-foreground">
+                            {meta.subtitle}
+                          </p>
+                        </div>
                       </div>
-                      <div>
-                        <h4 className="text-sm font-semibold leading-tight text-foreground">
-                          {meta.title}
-                        </h4>
-                        <p className="text-[11px] text-muted-foreground leading-snug">
-                          {meta.subtitle}
+
+                      <div
+                        className="relative h-11 overflow-hidden rounded-md border bg-background"
+                        style={{
+                          backgroundImage:
+                            "linear-gradient(to right, var(--color-border) 0 1px, transparent 1px)",
+                          backgroundSize: `${SLOT_PERCENT}% 100%`,
+                        }}
+                      >
+                        {dentistAppointments.length === 0 ? (
+                          <span className="absolute inset-0 flex items-center justify-center text-[11px] text-muted-foreground">
+                            Fully available
+                          </span>
+                        ) : (
+                          dentistAppointments.map((appointment) => {
+                            const { left, width } = blockGeometry(appointment);
+                            const serviceName = getServiceName(appointment.serviceCode);
+                            return (
+                              <div
+                                key={appointment.id}
+                                title={`${appointment.startTime}–${appointment.endTime} · ${serviceName} · ${appointment.patientName}`}
+                                className="absolute inset-y-1 flex flex-col justify-center gap-0.5 overflow-hidden rounded border border-primary/25 bg-primary/10 px-1.5 pl-2.5 before:absolute before:inset-y-0 before:left-0 before:w-[3px] before:bg-primary before:content-['']"
+                                style={{ left: `${left}%`, width: `${width}%` }}
+                              >
+                                <span className="truncate text-[10px] font-semibold tabular-nums leading-none text-foreground">
+                                  {appointment.startTime}
+                                </span>
+                                <span className="truncate text-[10px] leading-none text-muted-foreground">
+                                  {serviceName}
+                                </span>
+                              </div>
+                            );
+                          })
+                        )}
+                      </div>
+
+                      <div className="text-right">
+                        <p
+                          className={cn(
+                            "text-xs font-semibold tabular-nums",
+                            free === 0 ? "text-muted-foreground" : "text-foreground",
+                          )}
+                        >
+                          {free} free
+                        </p>
+                        <p className="text-[10px] tabular-nums text-muted-foreground">
+                          {booked} booked
                         </p>
                       </div>
                     </div>
-
-                    <Badge
-                      variant={isFullyAvailable ? "success" : "secondary"}
-                      className="text-[10px] px-2 py-0.5"
-                    >
-                      {isFullyAvailable ? "Fully Open" : `${dentistAppointments.length} Booked`}
-                    </Badge>
-                  </div>
-
-                  <div className="flex items-center justify-between text-[11px] text-muted-foreground pt-1">
-                    <span className="flex items-center gap-1">
-                      <Clock className="w-3 h-3" /> 09:00 – 17:00
-                    </span>
-                    <span className="flex items-center gap-1 font-mono text-[10px]">
-                      <ShieldCheck className="w-3 h-3 text-primary" /> {meta.scopeBadge}
-                    </span>
-                  </div>
-                </div>
-
-                {/* Appointment Schedule Area */}
-                <div className="flex-1 space-y-2 min-h-[160px] flex flex-col justify-center">
-                  {dentistAppointments.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center text-center p-4 rounded-lg bg-muted/20 border border-dashed border-border/80">
-                      <CheckCircle2 className="w-6 h-6 text-emerald-500 mb-1.5 opacity-90" />
-                      <span className="text-xs font-medium text-foreground">
-                        All 30-min slots open
-                      </span>
-                      <span className="text-[11px] text-muted-foreground mt-0.5">
-                        Available for instant booking
-                      </span>
-                    </div>
-                  ) : (
-                    <div className="space-y-2">
-                      {dentistAppointments.map((apt) => (
-                        <div
-                          key={apt.id}
-                          className="p-2.5 rounded-lg bg-background border shadow-2xs text-xs flex flex-col gap-1.5"
-                        >
-                          <div className="flex items-center justify-between">
-                            <span className="font-semibold text-primary flex items-center gap-1">
-                              <Clock className="w-3 h-3" />
-                              {apt.startTime} – {apt.endTime}
-                            </span>
-                            <Badge variant="outline" className="text-[9px] px-1.5 py-0 font-normal">
-                              Confirmed
-                            </Badge>
-                          </div>
-
-                          <div className="text-[11px] font-medium text-foreground flex items-center gap-1 truncate">
-                            <Stethoscope className="w-3 h-3 text-muted-foreground shrink-0" />
-                            <span className="truncate">{getServiceName(apt.serviceCode)}</span>
-                          </div>
-
-                          <div className="text-[10px] text-muted-foreground truncate border-t pt-1 flex justify-between">
-                            <span>Patient: {apt.patientName}</span>
-                            <span className="font-mono">({apt.patientPhone})</span>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                {/* Footer slot note */}
-                <div className="text-[10px] text-muted-foreground/80 text-center border-t pt-2">
-                  Standard 30-min grid alignment enforced
-                </div>
-              </div>
-            );
-          })}
+                  );
+                })}
+          </div>
         </div>
       </CardContent>
+
+      <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2 border-t px-4 py-3 text-[11px] text-muted-foreground">
+        <span className="flex items-center gap-1.5">
+          <ShieldCheck className="size-3.5 text-primary" aria-hidden="true" />
+          {PROVIDER_METADATA.junior?.scope} for Dr. Junior · {PROVIDER_METADATA["senior-1"]?.scope}{" "}
+          for seniors
+        </span>
+        <span className="flex items-center gap-1.5">
+          <Clock className="size-3.5" aria-hidden="true" />
+          {SLOT_MINUTES}-minute grid, {TOTAL_SLOTS} slots per dentist
+        </span>
+      </div>
     </Card>
   );
 }

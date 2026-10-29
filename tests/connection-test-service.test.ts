@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+import { generateKeyPairSync } from "node:crypto";
 import { testConnection } from "../src/services/connection-test-service";
 import { InMemorySecretRepository } from "../src/repository/in-memory-admin-repositories";
 
@@ -160,6 +161,77 @@ describe("testConnection request shape", () => {
     expect(params.get("grant_type")).toBe("refresh_token");
     expect(params.get("scope")).toBe("https://graph.microsoft.com/.default");
     expect(result.success).toBe(true);
+  });
+
+  it("posts a JWT bearer assertion when Google service-account credentials are set", async () => {
+    const { privateKey } = generateKeyPairSync("rsa", {
+      modulusLength: 2048,
+      publicKeyEncoding: { type: "spki", format: "pem" },
+      privateKeyEncoding: { type: "pkcs8", format: "pem" },
+    });
+
+    let seenBody = "";
+    const fetchImpl = (async (request: Request) => {
+      seenBody = await request.text();
+      return new Response("{}", { status: 200 });
+    }) as unknown as typeof fetch;
+
+    const result = await testConnection(makeDeps({ fetchImpl }), "google", {
+      "google.serviceAccountEmail": "dentist@project.iam.gserviceaccount.com",
+      "google.serviceAccountPrivateKey": privateKey,
+    });
+
+    // The service account alone is enough; no delegated OAuth fields are needed.
+    const params = new URLSearchParams(seenBody);
+    expect(params.get("grant_type")).toBe("urn:ietf:params:oauth:grant-type:jwt-bearer");
+    expect(params.get("assertion")).toBeTruthy();
+    expect(params.get("client_id")).toBeNull();
+    expect(result.success).toBe(true);
+  });
+
+  it("prefers service-account credentials over delegated OAuth when both are stored", async () => {
+    const { privateKey } = generateKeyPairSync("rsa", {
+      modulusLength: 2048,
+      publicKeyEncoding: { type: "spki", format: "pem" },
+      privateKeyEncoding: { type: "pkcs8", format: "pem" },
+    });
+
+    let seenBody = "";
+    const fetchImpl = (async (request: Request) => {
+      seenBody = await request.text();
+      return new Response("{}", { status: 200 });
+    }) as unknown as typeof fetch;
+
+    const deps = makeDeps({ fetchImpl });
+    await deps.secretRepository.setSecret("google.clientId", "client-id");
+    await deps.secretRepository.setSecret("google.clientSecret", "client-secret");
+    await deps.secretRepository.setSecret("google.refreshToken", "refresh-token");
+    await deps.secretRepository.setSecret(
+      "google.serviceAccountEmail",
+      "dentist@project.iam.gserviceaccount.com",
+    );
+    await deps.secretRepository.setSecret("google.serviceAccountPrivateKey", privateKey);
+
+    await testConnection(deps, "google");
+    expect(new URLSearchParams(seenBody).get("grant_type")).toBe(
+      "urn:ietf:params:oauth:grant-type:jwt-bearer",
+    );
+  });
+
+  it("fails when only one half of the service-account pair is stored", async () => {
+    const deps = makeDeps({ fetchImpl: explodingFetch, env: {} });
+    await deps.secretRepository.setSecret(
+      "google.serviceAccountEmail",
+      "a@b.iam.gserviceaccount.com",
+    );
+
+    const result = await testConnection(deps, "google");
+    expect(result).toEqual({
+      success: false,
+      provider: "google",
+      latencyMs: 0,
+      message: "Missing credentials",
+    });
   });
 
   it("sends an 8 second abort timeout signal", async () => {

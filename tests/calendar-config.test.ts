@@ -76,6 +76,41 @@ describe("Calendar Configuration", () => {
         expect(message).not.toContain("google-refresh-token-abc");
       }
     });
+
+    it("uses service-account auth when both service-account variables are set", () => {
+      const config = getGoogleCalendarConfig({
+        ...validGoogleEnv,
+        GOOGLE_SERVICE_ACCOUNT_EMAIL: "dentist@project.iam.gserviceaccount.com",
+        GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY:
+          "-----BEGIN PRIVATE KEY-----\\nabc\\n-----END PRIVATE KEY-----",
+      });
+
+      expect(config.serviceAccountEmail).toBe("dentist@project.iam.gserviceaccount.com");
+      // Escaped newlines from env storage are restored for PEM parsing.
+      expect(config.privateKey).toBe("-----BEGIN PRIVATE KEY-----\nabc\n-----END PRIVATE KEY-----");
+      expect(config.clientId).toBeUndefined();
+    });
+
+    it("does not require delegated OAuth variables in service-account mode", () => {
+      const env = {
+        GOOGLE_CALENDAR_JUNIOR: "junior-calendar@group.calendar.google.com",
+        GOOGLE_CALENDAR_SENIOR_1: "senior1-calendar@group.calendar.google.com",
+        GOOGLE_CALENDAR_SENIOR_2: "senior2-calendar@group.calendar.google.com",
+        GOOGLE_SERVICE_ACCOUNT_EMAIL: "dentist@project.iam.gserviceaccount.com",
+        GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY: "-----BEGIN PRIVATE KEY-----\\nabc",
+      };
+
+      expect(() => getGoogleCalendarConfig(env)).not.toThrow();
+    });
+
+    it("throws when only one half of the service-account pair is set", () => {
+      expect(() =>
+        getGoogleCalendarConfig({
+          ...validGoogleEnv,
+          GOOGLE_SERVICE_ACCOUNT_EMAIL: "dentist@project.iam.gserviceaccount.com",
+        }),
+      ).toThrow(/GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY/);
+    });
   });
 
   describe("getOutlookCalendarConfig", () => {

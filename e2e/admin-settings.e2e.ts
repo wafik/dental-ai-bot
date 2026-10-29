@@ -35,10 +35,12 @@ test.describe("Admin settings", () => {
     // Provider and mapping. Saving stays disabled until the stored settings
     // load, which is what guarantees these edits are not overwritten.
     await expect(page.getByTestId("save-settings")).toBeEnabled();
+    await page.getByRole("tab", { name: "Calendar" }).click();
     await page.locator("#calendar-provider").selectOption("google");
     await page.locator("#mapping-junior-calendar").fill("junior-e2e@group.calendar.google.com");
 
     // Draft secret + eye toggle
+    await page.getByRole("tab", { name: "Credentials" }).click();
     const openAiInput = page.getByLabel("API Key");
     await openAiInput.fill(DRAFT_SECRET);
     await expect(openAiInput).toHaveAttribute("type", "password");
@@ -49,6 +51,10 @@ test.describe("Admin settings", () => {
 
     await page.getByRole("button", { name: "Hide value" }).first().click();
     await expect(openAiInput).toHaveAttribute("type", "password");
+
+    // The endpoint and model are plain settings, prefilled from the environment.
+    await page.locator("#ai-baseUrl").fill("https://proxy.e2e.test/v1");
+    await page.locator("#ai-model").fill("e2e-model");
 
     const saveResponse = page.waitForResponse(
       (response) =>
@@ -67,13 +73,17 @@ test.describe("Admin settings", () => {
 
     // Reload persists configuration but never returns the secret.
     await page.reload();
+    await expect(page.getByTestId("status-openai")).toContainText("Configured");
+    await page.getByRole("tab", { name: "Calendar" }).click();
     await expect(page.locator("#calendar-provider")).toHaveValue("google");
     await expect(page.locator("#mapping-junior-calendar")).toHaveValue(
       "junior-e2e@group.calendar.google.com",
     );
-    await expect(page.getByTestId("status-openai")).toContainText("Configured");
+    await page.getByRole("tab", { name: "Credentials" }).click();
     await expect(page.getByLabel("API Key")).toHaveValue("");
     await expect(page.getByRole("button", { name: "Show value" })).toHaveCount(0);
+    await expect(page.locator("#ai-baseUrl")).toHaveValue("https://proxy.e2e.test/v1");
+    await expect(page.locator("#ai-model")).toHaveValue("e2e-model");
 
     // Logout revokes access.
     await page.getByTestId("logout").click();
@@ -81,5 +91,81 @@ test.describe("Admin settings", () => {
 
     await page.goto("/admin");
     await expect(page).toHaveURL(/\/admin\/login$/);
+  });
+
+  test("loads a Google service-account key JSON into drafts and saves it encrypted", async ({
+    page,
+  }) => {
+    await page.goto("/admin/login");
+    await page.getByLabel("Username").fill(USERNAME);
+    await page.getByLabel("Password").fill(PASSWORD);
+    await page.getByRole("button", { name: /sign in/i }).click();
+    await expect(page).toHaveURL(/\/admin$/);
+    await expect(page.getByTestId("save-settings")).toBeEnabled();
+    await page.getByRole("tab", { name: "Credentials" }).click();
+
+    // A file picker feeds the two service-account drafts from the browser.
+    await page.getByTestId("google-key-file").setInputFiles({
+      name: "key.json",
+      mimeType: "application/json",
+      buffer: Buffer.from(
+        JSON.stringify({
+          type: "service_account",
+          project_id: "e2e-project",
+          private_key: "-----BEGIN PRIVATE KEY-----\nE2EKEY\n-----END PRIVATE KEY-----\n",
+          client_email: "e2e-runner@e2e-project.iam.gserviceaccount.com",
+        }),
+      ),
+    });
+
+    const emailInput = page.locator("#secret-google-serviceAccountEmail");
+    const keyInput = page.locator("#secret-google-serviceAccountPrivateKey");
+    await expect(emailInput).toHaveValue("e2e-runner@e2e-project.iam.gserviceaccount.com");
+    await expect(keyInput).toHaveValue(/BEGIN PRIVATE KEY/);
+    await expect(page.getByText("Key JSON loaded into the fields below.")).toBeVisible();
+
+    // Both drafts stay masked until save.
+    await expect(emailInput).toHaveAttribute("type", "password");
+    await expect(keyInput).toHaveAttribute("type", "password");
+
+    const saveResponse = page.waitForResponse(
+      (response) =>
+        response.url().endsWith("/api/v1/admin/settings") && response.request().method() === "PUT",
+    );
+    await page.getByTestId("save-settings").click();
+    const response = await saveResponse;
+    expect(response.status()).toBe(200);
+    const body = await response.text();
+    expect(body).not.toContain("e2e-runner@e2e-project.iam.gserviceaccount.com");
+    expect(body).not.toContain("E2EKEY");
+
+    // Drafts clear; the stored values are only reported as configured.
+    await expect(emailInput).toHaveValue("");
+    await expect(keyInput).toHaveValue("");
+    await page.reload();
+    await expect(page.getByTestId("status-google")).toContainText("Configured");
+    await page.getByRole("tab", { name: "Credentials" }).click();
+    await expect(page.locator("#secret-google-serviceAccountEmail")).toHaveValue("");
+    await expect(page.getByText("Configured")).not.toHaveCount(0);
+  });
+
+  test("rejects a file that is not a service-account key", async ({ page }) => {
+    await page.goto("/admin/login");
+    await page.getByLabel("Username").fill(USERNAME);
+    await page.getByLabel("Password").fill(PASSWORD);
+    await page.getByRole("button", { name: /sign in/i }).click();
+    await expect(page).toHaveURL(/\/admin$/);
+    await page.getByRole("tab", { name: "Credentials" }).click();
+
+    await page.getByTestId("google-key-file").setInputFiles({
+      name: "notes.json",
+      mimeType: "application/json",
+      buffer: Buffer.from(JSON.stringify({ hello: "world" })),
+    });
+
+    await expect(
+      page.getByText("That file is not a Google service-account key JSON."),
+    ).toBeVisible();
+    await expect(page.locator("#secret-google-serviceAccountEmail")).toHaveValue("");
   });
 });

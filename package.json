@@ -15,6 +15,7 @@
     "test:e2e": "playwright test",
     "db:migrate": "bun scripts/migrate.ts",
     "hash:admin-password": "bun scripts/hash-admin-password.ts",
+    "import:google-service-account": "bun scripts/import-google-service-account.ts",
     "e2e:server": "bun scripts/e2e-server.ts",
     "build:slides": "node slides/compile.js",
     "build:pdf": "bun scripts/generate-pdf.js"

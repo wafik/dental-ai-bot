@@ -12,7 +12,9 @@ export type RateLimiterResult = {
 export class SlidingWindowRateLimiter {
   private readonly maxRequests: number;
   private readonly windowMs: number;
+  private readonly maxClients = 10_000;
   private readonly requests: Map<string, number[]> = new Map();
+  private lastPruneAt = 0;
 
   constructor(config: RateLimiterConfig) {
     this.maxRequests = config.maxRequests;
@@ -22,26 +24,33 @@ export class SlidingWindowRateLimiter {
   check(clientId: string): RateLimiterResult {
     const now = Date.now();
     const windowStart = now - this.windowMs;
-
-    let timestamps = this.requests.get(clientId) || [];
-    // Filter timestamps within current window
-    timestamps = timestamps.filter((time) => time > windowStart);
+    const existing = this.requests.get(clientId);
+    const timestamps = (existing ?? []).filter((time) => time > windowStart);
 
     if (timestamps.length >= this.maxRequests) {
       const oldestInWindow = timestamps[0] ?? now;
-      const resetMs = Math.max(0, oldestInWindow + this.windowMs - now);
-
-      this.requests.set(clientId, timestamps);
       return {
         allowed: false,
         remaining: 0,
-        resetMs,
+        resetMs: Math.max(0, oldestInWindow + this.windowMs - now),
       };
+    }
+
+    if (now - this.lastPruneAt >= this.windowMs) {
+      for (const [key, values] of this.requests) {
+        if (!values.some((time) => time > windowStart)) {
+          this.requests.delete(key);
+        }
+      }
+      this.lastPruneAt = now;
+    }
+
+    if (!existing && this.requests.size >= this.maxClients) {
+      return { allowed: false, remaining: 0, resetMs: this.windowMs };
     }
 
     timestamps.push(now);
     this.requests.set(clientId, timestamps);
-
     return {
       allowed: true,
       remaining: this.maxRequests - timestamps.length,

@@ -117,6 +117,7 @@ describe("OpenAIChatAdapter", () => {
 
       // Verify request body
       expect(capturedBody.model).toBe("gpt-4o-mini");
+      expect(capturedBody.stream).toBe(false);
       expect(capturedBody.temperature).toBe(0.2);
       expect(capturedBody.max_tokens).toBe(500);
       expect(capturedBody.messages).toEqual([

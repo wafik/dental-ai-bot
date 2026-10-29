@@ -1,3 +1,5 @@
+import { AI_SETTINGS_DEFAULTS } from "../domain/admin-settings";
+
 export type AIConfig = {
   apiKey: string;
   baseUrl: string;
@@ -21,7 +23,7 @@ export function getAIConfig(env: Record<string, string | undefined> = process.en
 
   return {
     apiKey,
-    baseUrl: rawBaseUrl || "https://api.openai.com/v1",
-    model: rawModel || "gpt-4o-mini",
+    baseUrl: rawBaseUrl || AI_SETTINGS_DEFAULTS.baseUrl,
+    model: rawModel || AI_SETTINGS_DEFAULTS.model,
   };
 }

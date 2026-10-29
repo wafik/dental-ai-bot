@@ -38,6 +38,7 @@ describe("getRuntimeAiConfig", () => {
 
     const config = await getRuntimeAiConfig({
       secretRepository,
+      settingsRepository: new InMemorySettingsRepository(),
       env: {
         OPENAI_API_KEY: "sk-environment",
         OPENAI_BASE_URL: "https://example.test/v1",
@@ -50,11 +51,29 @@ describe("getRuntimeAiConfig", () => {
     expect(config.model).toBe("custom-model");
   });
 
+  it("prefers the admin-stored endpoint and model over the environment", async () => {
+    const secretRepository = new InMemorySecretRepository(ENCRYPTION_ENV);
+    await secretRepository.setSecret(SECRET_KEYS.openaiApiKey, "sk-database");
+    const settingsRepository = new InMemorySettingsRepository();
+    await settingsRepository.setSetting("OPENAI_BASE_URL", "https://stored.test/v1");
+    await settingsRepository.setSetting("OPENAI_MODEL", "stored-model");
+
+    const config = await getRuntimeAiConfig({
+      secretRepository,
+      settingsRepository,
+      env: { OPENAI_BASE_URL: "https://env.test/v1", OPENAI_MODEL: "env-model" },
+    });
+
+    expect(config.baseUrl).toBe("https://stored.test/v1");
+    expect(config.model).toBe("stored-model");
+  });
+
   it("falls back to the environment when no database key is stored", async () => {
     const secretRepository = new InMemorySecretRepository(ENCRYPTION_ENV);
 
     const config = await getRuntimeAiConfig({
       secretRepository,
+      settingsRepository: new InMemorySettingsRepository(),
       env: { OPENAI_API_KEY: "sk-environment" },
     });
 
@@ -69,6 +88,7 @@ describe("getRuntimeAiConfig", () => {
 
     const config = await getRuntimeAiConfig({
       secretRepository,
+      settingsRepository: new InMemorySettingsRepository(),
       env: { OPENAI_API_KEY: "sk-environment" },
     });
 
@@ -78,9 +98,13 @@ describe("getRuntimeAiConfig", () => {
   it("throws when neither the database nor the environment has a key", async () => {
     const secretRepository = new InMemorySecretRepository(ENCRYPTION_ENV);
 
-    await expect(getRuntimeAiConfig({ secretRepository, env: {} })).rejects.toThrow(
-      /OPENAI_API_KEY/,
-    );
+    await expect(
+      getRuntimeAiConfig({
+        secretRepository,
+        settingsRepository: new InMemorySettingsRepository(),
+        env: {},
+      }),
+    ).rejects.toThrow(/OPENAI_API_KEY/);
   });
 });
 

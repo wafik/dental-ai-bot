@@ -1,4 +1,5 @@
 import type { SecretRepository } from "../repository/secret-repository";
+import { buildServiceAccountAssertion } from "../providers/calendar/google-calendar-adapter";
 import { ALL_SECRET_KEYS, ENV_FALLBACK_KEYS, type SecretKey } from "../security/secret-keys";
 
 export type ConnectionProvider = "openai" | "google" | "microsoft";
@@ -30,6 +31,11 @@ const PROVIDER_KEYS: Record<ConnectionProvider, SecretKey[]> = {
     "microsoft.refreshToken",
   ],
 };
+
+const GOOGLE_SERVICE_ACCOUNT_KEYS: SecretKey[] = [
+  "google.serviceAccountEmail",
+  "google.serviceAccountPrivateKey",
+];
 
 const SECRET_KEY_SET = new Set<string>(ALL_SECRET_KEYS);
 
@@ -68,9 +74,28 @@ async function resolveField(
   return fallbackValue ? fallbackValue : null;
 }
 
+/** Resolves every key, or returns null when any one of them is unset. */
+async function resolveFields(
+  deps: ConnectionTestDeps,
+  env: Record<string, string | undefined>,
+  keys: SecretKey[],
+  draft: Record<string, string> | undefined,
+): Promise<Record<string, string> | null> {
+  const fields: Record<string, string> = {};
+  for (const key of keys) {
+    const value = await resolveField(deps, env, key, draft);
+    if (!value) {
+      return null;
+    }
+    fields[key] = value;
+  }
+  return fields;
+}
+
 async function buildRequest(
   provider: ConnectionProvider,
   fields: Record<string, string>,
+  googleServiceAccount?: Record<string, string>,
 ): Promise<Request> {
   if (provider === "openai") {
     return new Request("https://api.openai.com/v1/models", {
@@ -81,6 +106,22 @@ async function buildRequest(
   }
 
   if (provider === "google") {
+    if (googleServiceAccount) {
+      const assertion = buildServiceAccountAssertion(
+        googleServiceAccount["google.serviceAccountEmail"]!,
+        googleServiceAccount["google.serviceAccountPrivateKey"]!,
+      );
+      return new Request("https://oauth2.googleapis.com/token", {
+        method: "POST",
+        headers: { "content-type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
+          grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
+          assertion,
+        }).toString(),
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      });
+    }
+
     const body = new URLSearchParams({
       grant_type: "refresh_token",
       client_id: fields["google.clientId"]!,
@@ -130,18 +171,26 @@ export async function testConnection(
     return { success: false, provider, latencyMs: 0, message: "Missing credentials" };
   }
 
-  const fields: Record<string, string> = {};
-  for (const key of PROVIDER_KEYS[provider]) {
-    const value = await resolveField(deps, env, key, draft);
-    if (!value) {
-      return { success: false, provider, latencyMs: 0, message: "Missing credentials" };
-    }
-    fields[key] = value;
+  // Google accepts either auth mode; a complete service account wins, the
+  // same precedence the calendar factory applies at booking time.
+  let googleServiceAccount: Record<string, string> | null = null;
+  let fields: Record<string, string> | null;
+  if (provider === "google") {
+    googleServiceAccount = await resolveFields(deps, env, GOOGLE_SERVICE_ACCOUNT_KEYS, draft);
+    fields = googleServiceAccount
+      ? {}
+      : await resolveFields(deps, env, PROVIDER_KEYS[provider], draft);
+  } else {
+    fields = await resolveFields(deps, env, PROVIDER_KEYS[provider], draft);
+  }
+
+  if (!fields) {
+    return { success: false, provider, latencyMs: 0, message: "Missing credentials" };
   }
 
   const startedAt = now();
   try {
-    const request = await buildRequest(provider, fields);
+    const request = await buildRequest(provider, fields, googleServiceAccount ?? undefined);
     const fetchImpl = deps.fetchImpl ?? globalThis.fetch;
     const response = await fetchImpl(request);
     // Do not read the body: provider error payloads must never reach clients.

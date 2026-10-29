@@ -51,7 +51,14 @@ All configuration is done from the **Admin Console** at `/admin` — no code cha
 4. **Enter the details in the Admin Console:**
    * Sign in at `/admin`, select **Google Calendar** as the active provider.
    * Paste the Calendar ID for each dentist under **Dentist Calendar Mappings**.
-   * Enter the Google Client ID, Client Secret, and Refresh Token under **Credentials**, then save.
+   * Under **Credentials**, choose one authentication method:
+     * **Service account (recommended for clinics):** enter the **Service Account Email** and **Service Account Private Key** from the downloaded JSON key file (the `client_email` and `private_key` values).
+     * **Delegated OAuth:** enter the Google Client ID, Client Secret, and Refresh Token.
+   * Save, then click **Test connection**.
+
+> **Important:** a service account can only see calendars that were explicitly shared with it.
+> Share every dentist calendar with the service account email using **Make changes to events**.
+> If the calendars are not shared, the connection test passes but bookings cannot be written.
 
 ---
 
@@ -89,6 +96,18 @@ Your clinic staff can monitor appointments in real time via the web portal:
    * Works on any computer, tablet, or smartphone with a microphone.
 3. **AI Text Chat:**
    * Patients who prefer typing can use the chat window. They can ask questions, verify open time slots, and receive instant confirmation.
+   * New assistant replies are read aloud by default. Use **Auto-read on/off** in the chat header to disable or re-enable speech. Each reply also has a **Read aloud** button for manual playback or retry if automatic playback is blocked.
+
+### Optional Kokoro Text-to-Speech Service
+
+Text-to-speech runs through a separate Kokoro service; it is not bundled into the web app. Configure these server-side environment variables:
+
+```env
+KOKORO_TTS_BASE_URL=http://localhost:8880/v1
+KOKORO_TTS_VOICE=af_heart
+```
+
+The base URL must be reachable from the Next.js server and expose Kokoro-FastAPI's OpenAI-compatible `POST /audio/speech` endpoint (the full path is `/v1/audio/speech`). Set the voice to any voice supported by your Kokoro deployment. HTTPS is required except for loopback development URLs (`localhost`, `127.0.0.1`, or `::1`). Keep this service on a trusted network. If it is unavailable, chat replies remain visible and can be retried when the service is restored. Generated audio is not stored by the application.
 
 ---
 

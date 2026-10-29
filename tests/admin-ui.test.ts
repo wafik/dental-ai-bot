@@ -8,6 +8,27 @@ import { CredentialsSection } from "../src/components/admin/credentials-section"
 import { SecretInput } from "../src/components/admin/secret-input";
 
 const noop = () => {};
+const VALID_AI = { baseUrl: "https://api.openai.com/v1", model: "gpt-4o-mini" };
+
+/** Renders the credentials tab with the given overrides. */
+function renderCredentials(
+  props: Partial<{
+    secrets: Record<string, { isConfigured: boolean }>;
+    testingProvider: string | null;
+  }> = {},
+): string {
+  return renderToStaticMarkup(
+    createElement(CredentialsSection, {
+      secrets: props.secrets ?? {},
+      drafts: {},
+      onDraftChange: noop,
+      onTest: noop,
+      testingProvider: props.testingProvider ?? null,
+      ai: VALID_AI,
+      onAiChange: noop,
+    }),
+  );
+}
 
 function renderSecretInput(props: {
   isConfigured: boolean;
@@ -106,15 +127,7 @@ describe("CalendarSettingsSection", () => {
 
 describe("CredentialsSection", () => {
   it("renders one test button per secret group and write-only inputs", () => {
-    const markup = renderToStaticMarkup(
-      createElement(CredentialsSection, {
-        secrets: { "openai.apiKey": { isConfigured: true } },
-        drafts: {},
-        onDraftChange: noop,
-        onTest: noop,
-        testingProvider: null,
-      }),
-    );
+    const markup = renderCredentials({ secrets: { "openai.apiKey": { isConfigured: true } } });
 
     expect(markup).toContain('data-testid="test-openai"');
     expect(markup).toContain('data-testid="test-google"');
@@ -124,19 +137,45 @@ describe("CredentialsSection", () => {
     expect(markup).not.toContain('type="text"');
   });
 
-  it("labels the pressed group as testing", () => {
+  it("renders the editable base URL and model next to the OpenAI key", () => {
+    const markup = renderCredentials();
+
+    expect(markup).toContain('id="ai-baseUrl"');
+    expect(markup).toContain('id="ai-model"');
+    expect(markup).toContain("https://api.openai.com/v1");
+    expect(markup).toContain("gpt-4o-mini");
+  });
+
+  it("flags an invalid base URL below the field", () => {
     const markup = renderToStaticMarkup(
       createElement(CredentialsSection, {
         secrets: {},
         drafts: {},
         onDraftChange: noop,
         onTest: noop,
-        testingProvider: "google",
+        testingProvider: null,
+        ai: { baseUrl: "not-a-url", model: "" },
+        onAiChange: noop,
       }),
     );
 
+    expect(markup).toContain("Use the full URL");
+    expect(markup).toContain('aria-invalid="true"');
+  });
+
+  it("labels the pressed group as testing", () => {
+    const markup = renderCredentials({ testingProvider: "google" });
+
     expect(markup).toContain("Testing…");
     expect(markup).toContain("disabled");
+  });
+
+  it("offers a key JSON file picker for the Google group only", () => {
+    const markup = renderCredentials();
+
+    expect(markup.match(/data-testid="google-key-file"/g)).toHaveLength(1);
+    expect(markup).toContain('accept="application/json,.json"');
+    expect(markup).toContain("The file is read in your browser only.");
   });
 });
 
@@ -158,8 +197,13 @@ describe("Client forms", () => {
 
     expect(markup).toContain('data-testid="save-settings"');
     expect(markup).toContain('data-testid="logout"');
+    expect(markup).toContain("e2e-admin");
+    // The overview tab is the landing view; credentials live behind their own tab.
     expect(markup).toContain('data-testid="status-openai"');
     expect(markup).toContain("Not configured");
-    expect(markup).toContain("e2e-admin");
+    expect(markup).toContain('role="tab"');
+    expect(markup).toContain("Overview");
+    expect(markup).toContain("Calendar");
+    expect(markup).toContain("Credentials");
   });
 });

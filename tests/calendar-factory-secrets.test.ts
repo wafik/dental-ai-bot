@@ -216,4 +216,60 @@ describe("Calendar factory credential resolution", () => {
 
     expect(provider).toBeInstanceOf(NoopCalendarProvider);
   });
+
+  it("builds a service-account adapter from stored secrets without delegated OAuth", async () => {
+    const settingsRepository = new InMemorySettingsRepository();
+    await seedGoogleMappings(settingsRepository);
+
+    const secretRepository = new InMemorySecretRepository(ENCRYPTION_ENV);
+    await secretRepository.setSecret(
+      SECRET_KEYS.googleServiceAccountEmail,
+      "dentist@project.iam.gserviceaccount.com",
+    );
+    await secretRepository.setSecret(
+      SECRET_KEYS.googleServiceAccountPrivateKey,
+      "-----BEGIN PRIVATE KEY-----\\nabc",
+    );
+
+    const provider = await resolveCalendarProvider({
+      settingsRepository,
+      secretRepository,
+      env: {},
+    });
+
+    expect(provider).toBeInstanceOf(GoogleCalendarAdapter);
+    const config = (
+      provider as unknown as { config: { serviceAccountEmail?: string; privateKey?: string } }
+    ).config;
+    expect(config.serviceAccountEmail).toBe("dentist@project.iam.gserviceaccount.com");
+    expect(config.privateKey).toBe("-----BEGIN PRIVATE KEY-----\nabc");
+  });
+
+  it("prefers service-account auth over delegated OAuth when both are available", async () => {
+    const settingsRepository = new InMemorySettingsRepository();
+    await seedGoogleMappings(settingsRepository);
+
+    const secretRepository = new InMemorySecretRepository(ENCRYPTION_ENV);
+    await secretRepository.setSecret(
+      SECRET_KEYS.googleServiceAccountEmail,
+      "dentist@project.iam.gserviceaccount.com",
+    );
+    await secretRepository.setSecret(
+      SECRET_KEYS.googleServiceAccountPrivateKey,
+      "-----BEGIN PRIVATE KEY-----\\nabc",
+    );
+
+    const provider = await resolveCalendarProvider({
+      settingsRepository,
+      secretRepository,
+      env: GOOGLE_ENV,
+    });
+
+    expect(provider).toBeInstanceOf(GoogleCalendarAdapter);
+    const config = (
+      provider as unknown as { config: { serviceAccountEmail?: string; clientId?: string } }
+    ).config;
+    expect(config.serviceAccountEmail).toBe("dentist@project.iam.gserviceaccount.com");
+    expect(config.clientId).toBeUndefined();
+  });
 });

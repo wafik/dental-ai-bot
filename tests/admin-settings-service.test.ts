@@ -3,13 +3,13 @@ import { readAdminSettings, updateAdminSettings } from "../src/services/admin-se
 import { InMemorySettingsRepository } from "../src/repository/in-memory-settings-repository";
 import { InMemorySecretRepository } from "../src/repository/in-memory-admin-repositories";
 import { CALENDAR_PROVIDER_SETTING } from "../src/domain/admin-settings";
-
 const ENCRYPTION_ENV = { SETTINGS_ENCRYPTION_KEY: "a".repeat(64) };
 
-function makeDeps() {
+function makeDeps(env: Record<string, string | undefined> = {}) {
   return {
     settingsRepository: new InMemorySettingsRepository(),
     secretRepository: new InMemorySecretRepository(ENCRYPTION_ENV),
+    env,
   };
 }
 
@@ -64,6 +64,28 @@ describe("readAdminSettings", () => {
     });
     expect(settings.dentistMappings).toHaveLength(3);
   });
+
+  it("falls back to the environment AI endpoint, then the built-in default", async () => {
+    const fromEnv = await readAdminSettings(
+      makeDeps({ OPENAI_BASE_URL: "https://proxy.test/v1", OPENAI_MODEL: "custom-model" }),
+    );
+    expect(fromEnv.ai).toEqual({ baseUrl: "https://proxy.test/v1", model: "custom-model" });
+
+    const defaults = await readAdminSettings(makeDeps());
+    expect(defaults.ai).toEqual({
+      baseUrl: "https://api.openai.com/v1",
+      model: "gpt-4o-mini",
+    });
+  });
+
+  it("prefers the stored AI endpoint over the environment", async () => {
+    const deps = makeDeps({ OPENAI_BASE_URL: "https://env.test/v1" });
+    await deps.settingsRepository.setSetting("OPENAI_BASE_URL", "https://stored.test/v1");
+    await deps.settingsRepository.setSetting("OPENAI_MODEL", "stored-model");
+
+    const settings = await readAdminSettings(deps);
+    expect(settings.ai).toEqual({ baseUrl: "https://stored.test/v1", model: "stored-model" });
+  });
 });
 
 describe("updateAdminSettings", () => {
@@ -83,6 +105,33 @@ describe("updateAdminSettings", () => {
     expect(result.dentistMappings[0]!.calendarId).toBe("cal-junior");
     expect(result.dentistMappings[1]!.calendarId).toBe("cal-senior-1");
     expect(result.dentistMappings[2]!.calendarId).toBe("");
+  });
+
+  it("persists the AI endpoint and echoes it back", async () => {
+    const deps = makeDeps();
+
+    const result = await updateAdminSettings(deps, {
+      calendarProvider: "none",
+      dentistMappings: [],
+      ai: { baseUrl: "https://proxy.internal/v1", model: "deepseek-chat" },
+    });
+
+    expect(result.ai).toEqual({ baseUrl: "https://proxy.internal/v1", model: "deepseek-chat" });
+    expect(await deps.settingsRepository.getSetting("OPENAI_BASE_URL")).toBe(
+      "https://proxy.internal/v1",
+    );
+  });
+
+  it("leaves the stored AI endpoint alone when the field is omitted", async () => {
+    const deps = makeDeps();
+    await deps.settingsRepository.setSetting("OPENAI_MODEL", "kept-model");
+
+    const result = await updateAdminSettings(deps, {
+      calendarProvider: "none",
+      dentistMappings: [],
+    });
+
+    expect(result.ai.model).toBe("kept-model");
   });
 
   it("stores non-empty secrets and reports them as configured without plaintext", async () => {

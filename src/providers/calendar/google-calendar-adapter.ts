@@ -1,3 +1,4 @@
+import { createSign } from "node:crypto";
 import {
   CalendarProviderError,
   normalizeCalendarInterval,
@@ -8,6 +9,43 @@ import {
   type CreatedCalendarEvent,
 } from "./calendar-provider";
 import type { DentistCalendarMapping, GoogleCalendarConfig } from "../../config/calendar";
+
+const GOOGLE_CALENDAR_SCOPE = "https://www.googleapis.com/auth/calendar";
+const GOOGLE_TOKEN_URI = "https://oauth2.googleapis.com/token";
+
+function base64Url(input: Buffer | string): string {
+  return Buffer.from(input)
+    .toString("base64")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
+}
+
+/**
+ * Builds the RS256 JWT assertion for the OAuth 2.0 JWT bearer grant. Service
+ * accounts have no refresh token, so this replaces the refresh-token exchange.
+ * Accepts both real newlines and the escaped form used by env storage.
+ */
+export function buildServiceAccountAssertion(
+  serviceAccountEmail: string,
+  privateKey: string,
+  nowMs: number = Date.now(),
+): string {
+  const issuedAt = Math.floor(nowMs / 1000);
+  const unsigned = `${base64Url(JSON.stringify({ alg: "RS256", typ: "JWT" }))}.${base64Url(
+    JSON.stringify({
+      iss: serviceAccountEmail,
+      scope: GOOGLE_CALENDAR_SCOPE,
+      aud: GOOGLE_TOKEN_URI,
+      iat: issuedAt,
+      exp: issuedAt + 3600,
+    }),
+  )}`;
+
+  const signer = createSign("RSA-SHA256");
+  signer.update(unsigned);
+  return `${unsigned}.${base64Url(signer.sign(privateKey.replace(/\\n/g, "\n")))}`;
+}
 
 type GoogleTokenResponse = {
   access_token?: string;
@@ -49,11 +87,15 @@ export class GoogleCalendarAdapter implements CalendarProvider {
       return this.cachedAccessToken.token;
     }
 
+    if (this.config.serviceAccountEmail && this.config.privateKey) {
+      return this.exchangeServiceAccountToken(now);
+    }
+
     const bodyParams = new URLSearchParams({
       grant_type: "refresh_token",
-      client_id: this.config.clientId,
-      client_secret: this.config.clientSecret,
-      refresh_token: this.config.refreshToken,
+      client_id: this.config.clientId ?? "",
+      client_secret: this.config.clientSecret ?? "",
+      refresh_token: this.config.refreshToken ?? "",
     });
 
     let res: Response;
@@ -99,6 +141,64 @@ export class GoogleCalendarAdapter implements CalendarProvider {
     this.cachedAccessToken = {
       token: data.access_token,
       expiresAtMs: now + safeLifetimeMs,
+    };
+
+    return data.access_token;
+  }
+
+  /**
+   * Exchanges a signed JWT assertion for an access token using the OAuth 2.0
+   * JWT bearer grant.
+   */
+  private async exchangeServiceAccountToken(now: number): Promise<string> {
+    const tokenUri = GOOGLE_TOKEN_URI;
+    const assertion = buildServiceAccountAssertion(
+      this.config.serviceAccountEmail ?? "",
+      this.config.privateKey ?? "",
+      now,
+    );
+
+    let res: Response;
+    try {
+      res = await this.fetchFn(tokenUri, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
+          grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
+          assertion,
+        }).toString(),
+      });
+    } catch (err: unknown) {
+      throw new CalendarProviderError({
+        message: "Network failure while exchanging Google service-account token",
+        provider: "google",
+        operation: "refreshToken",
+        cause: err,
+      });
+    }
+
+    if (!res.ok) {
+      throw new CalendarProviderError({
+        message: "Google service-account token exchange failed",
+        provider: "google",
+        operation: "refreshToken",
+        status: res.status,
+      });
+    }
+
+    const data = (await res.json()) as GoogleTokenResponse;
+    if (!data.access_token) {
+      throw new CalendarProviderError({
+        message: "Google service-account token response missing access_token",
+        provider: "google",
+        operation: "refreshToken",
+      });
+    }
+
+    const expiresInSeconds = typeof data.expires_in === "number" ? data.expires_in : 3600;
+    this.cachedAccessToken = {
+      token: data.access_token,
+      expiresAtMs: now + Math.max(expiresInSeconds - 60, 10) * 1000,
     };
 
     return data.access_token;

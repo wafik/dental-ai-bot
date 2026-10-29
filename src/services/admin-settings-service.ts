@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import {
+  AI_SETTING_KEYS,
   CALENDAR_PROVIDER_SETTING,
   DENTIST_IDS,
   type AdminDentistMapping,
@@ -22,10 +23,12 @@ import {
 import { ALL_SECRET_KEYS, type SecretKey } from "../security/secret-keys";
 import { readSessionToken } from "../security/admin-cookie";
 import { AdminAuthService } from "./admin-auth-service";
+import { resolveAiSettings } from "./runtime-config";
 
 export type AdminSettingsDeps = {
   settingsRepository: SettingsRepository;
   secretRepository: SecretRepository;
+  env?: Record<string, string | undefined>;
 };
 
 type SettingsEnv = Record<string, string | undefined>;
@@ -90,10 +93,11 @@ function buildSecretView(
 }
 
 /**
- * Reads provider, dentist mappings, and secret metadata for the admin UI.
- * Secret plaintext is never part of the returned view.
+ * Reads provider, dentist mappings, AI endpoint, and secret metadata for the
+ * admin UI. Secret plaintext is never part of the returned view.
  */
 export async function readAdminSettings(deps: AdminSettingsDeps): Promise<AdminSettingsView> {
+  const env = deps.env ?? process.env;
   const storedProvider = await deps.settingsRepository.getSetting(CALENDAR_PROVIDER_SETTING);
   const calendarProvider = normalizeCalendarProvider(storedProvider);
   const preferredProvider: MappingProviderId =
@@ -130,6 +134,7 @@ export async function readAdminSettings(deps: AdminSettingsDeps): Promise<AdminS
   return {
     calendarProvider,
     dentistMappings,
+    ai: await resolveAiSettings(deps.settingsRepository, env),
     secrets: buildSecretView(metadata),
   };
 }
@@ -150,6 +155,19 @@ export async function updateAdminSettings(
       provider: mapping.provider,
       calendarId: mapping.calendarId.trim(),
     });
+  }
+
+  if (input.ai) {
+    await deps.settingsRepository.setSetting(
+      AI_SETTING_KEYS.baseUrl,
+      input.ai.baseUrl.trim(),
+      "OpenAI-compatible base URL",
+    );
+    await deps.settingsRepository.setSetting(
+      AI_SETTING_KEYS.model,
+      input.ai.model.trim(),
+      "Model name sent to the AI endpoint",
+    );
   }
 
   for (const [key, rawValue] of Object.entries(input.secrets ?? {})) {

@@ -114,7 +114,17 @@ Configure your API keys as needed (mock adapters run out-of-the-box for offline 
 OPENAI_API_KEY="sk-proj-your-openai-api-key"
 CLINIC_TIMEZONE="Asia/Jakarta"
 CALENDAR_PROVIDER="google" # or "outlook"
+KOKORO_TTS_BASE_URL="http://localhost:8880/v1"
+KOKORO_TTS_VOICE="af_heart"
 ```
+
+Text chat reads new assistant replies aloud by default. Patients can turn **Auto-read** off in the
+chat header or use a reply's **Read aloud** button. Text-to-speech uses a separately deployed
+Kokoro-FastAPI service exposing the OpenAI-compatible `POST /v1/audio/speech` endpoint. The URL is
+used by the Next.js server and must be reachable from that server, not from the patient's browser.
+When Kokoro is unavailable, chat replies still appear and can be retried later; generated audio is
+not stored by the app. See the [clinic guide](docs/EXTERNAL_CLIENT_GUIDE.md#optional-kokoro-text-to-speech-service)
+for setup details.
 
 ### 2b. Admin Console Setup (production)
 
@@ -131,6 +141,17 @@ Then open [http://localhost:3000/admin](http://localhost:3000/admin). Stored cre
 write-only: the API returns only configured status, and the eye toggle reveals only the value
 currently being typed. Environment variables remain a bootstrap fallback for any credential not
 entered in the admin console.
+
+For Google Calendar, either paste the **Service Account Email** and **Service Account Private Key**
+from your key JSON, or the delegated Client ID / Client Secret / Refresh Token. Service-account auth
+takes precedence when both are present. A service account only sees calendars explicitly shared with
+its email, so share each dentist calendar with it first.
+
+To bootstrap the service-account credentials from a key file instead of the UI:
+
+```bash
+bun run import:google-service-account path/to/service-account.json
+```
 
 ### 3. Running Locally
 

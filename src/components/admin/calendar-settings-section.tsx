@@ -1,14 +1,19 @@
 "use client";
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Field, FieldError, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import type { CalendarProviderId, DentistId, MappingProviderId } from "@/domain/admin-settings";
-
-export type CalendarMappingDraft = {
-  dentistId: DentistId;
-  provider: MappingProviderId;
-  calendarId: string;
-};
+import { cn } from "@/lib/utils";
+import {
+  CALENDAR_PROVIDER_LABELS,
+  DENTIST_IDS,
+  DENTIST_LABELS,
+  type CalendarMappingDraft,
+  type CalendarProviderId,
+  type DentistId,
+  type MappingProviderId,
+} from "@/domain/admin-settings";
+import { calendarIdError } from "@/utils/form-validation";
 
 export type CalendarSettingsSectionProps = {
   provider: CalendarProviderId;
@@ -21,12 +26,6 @@ export type CalendarSettingsSectionProps = {
   /** Prevents edits before the stored settings arrive and overwrite them. */
   disabled?: boolean;
 };
-
-const DENTIST_LABELS: Array<{ id: DentistId; label: string }> = [
-  { id: "junior", label: "Dr. Junior" },
-  { id: "senior-1", label: "Dr. Senior 1" },
-  { id: "senior-2", label: "Dr. Senior 2" },
-];
 
 const SELECT_CLASS =
   "h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50";
@@ -61,21 +60,42 @@ export function CalendarSettingsSection({
             disabled={disabled}
             onChange={(event) => onProviderChange(event.target.value as CalendarProviderId)}
           >
-            <option value="none">None (external calendar disabled)</option>
-            <option value="google">Google Calendar</option>
-            <option value="outlook">Outlook / Microsoft Graph</option>
+            {Object.entries(CALENDAR_PROVIDER_LABELS).map(([value, label]) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
           </select>
         </div>
 
+        <div className="rounded-lg border border-dashed p-3 text-sm text-muted-foreground">
+          <p className="font-medium text-foreground">How to get a Calendar ID</p>
+          <p className="mt-1">
+            Calendars are never detected automatically. For each dentist, open their calendar in
+            Google Calendar or Outlook, share it with the service account email (or the delegated
+            OAuth account) using &quot;Make changes to events&quot;, then copy the Calendar ID from
+            the calendar&apos;s settings and paste it below.
+          </p>
+          <p className="mt-1">
+            A Calendar ID is usually an email address, for example{" "}
+            <code className="rounded bg-muted px-1 py-0.5 text-xs">clinic@gmail.com</code> or{" "}
+            <code className="rounded bg-muted px-1 py-0.5 text-xs">
+              abc123@group.calendar.google.com
+            </code>
+            .
+          </p>
+        </div>
+
         <div className="flex flex-col gap-4">
-          {DENTIST_LABELS.map(({ id, label }) => {
+          {DENTIST_IDS.map((id) => {
             const mapping = mappings.find((entry) => entry.dentistId === id);
             const mappingProvider = mapping?.provider ?? "google";
             const calendarId = mapping?.calendarId ?? "";
+            const calendarError = calendarIdError(calendarId);
 
             return (
               <div key={id} className="flex flex-col gap-2 rounded-lg border p-3">
-                <span className="text-sm font-medium text-foreground">{label}</span>
+                <span className="text-sm font-medium text-foreground">{DENTIST_LABELS[id]}</span>
                 <div className="flex flex-col gap-2 sm:flex-row">
                   <div className="flex flex-col gap-1.5 sm:w-44">
                     <label
@@ -100,21 +120,29 @@ export function CalendarSettingsSection({
                     </select>
                   </div>
 
-                  <div className="flex flex-1 flex-col gap-1.5">
-                    <label
+                  <Field data-invalid={Boolean(calendarError)} className="flex-1 gap-1.5 sm:w-auto">
+                    <FieldLabel
                       htmlFor={`mapping-${id}-calendar`}
-                      className="text-xs text-muted-foreground"
+                      className="text-xs font-normal text-muted-foreground"
                     >
                       Calendar ID
-                    </label>
+                    </FieldLabel>
                     <Input
                       id={`mapping-${id}-calendar`}
                       value={calendarId}
-                      placeholder="Calendar identifier"
+                      placeholder="e.g. clinic@gmail.com or abc123@group.calendar.google.com"
                       disabled={disabled}
                       onChange={(event) => onMappingChange(id, { calendarId: event.target.value })}
+                      aria-invalid={Boolean(calendarError)}
+                      aria-describedby={calendarError ? `mapping-${id}-calendar-error` : undefined}
+                      className={cn(
+                        calendarError && "border-destructive focus-visible:ring-destructive",
+                      )}
                     />
-                  </div>
+                    <FieldError id={`mapping-${id}-calendar-error`} className="text-xs">
+                      {calendarError}
+                    </FieldError>
+                  </Field>
                 </div>
               </div>
             );

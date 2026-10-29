@@ -43,6 +43,11 @@ yarn-error.log*
 .env*
 !.env.example
 
+# cloud credential keys
+*service-account*.json
+warungku-*.json
+docs/*.json
+
 # vercel
 .vercel
 
