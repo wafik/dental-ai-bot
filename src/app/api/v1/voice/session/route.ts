@@ -16,9 +16,16 @@ export function createVoiceSessionHandler(deps: VoiceSessionRouteDeps = {}) {
         deps.voiceProvider ?? new OpenAIRealtimeAdapter({ apiKey: await getRuntimeOpenAiApiKey() });
 
       const session = await voiceProvider.createSession();
-      return NextResponse.json({ success: true, data: session }, { status: 200 });
+      const { provider, sessionId, clientSecret, model, voice, expiresAt } = session;
+      return NextResponse.json(
+        { success: true, data: { provider, sessionId, clientSecret, model, voice, expiresAt } },
+        { status: 200, headers: { "Cache-Control": "no-store" } },
+      );
     } catch {
-      return NextResponse.json({ success: false, error: GENERIC_ERROR }, { status: 500 });
+      return NextResponse.json(
+        { success: false, error: GENERIC_ERROR },
+        { status: 500, headers: { "Cache-Control": "no-store" } },
+      );
     }
   };
 }

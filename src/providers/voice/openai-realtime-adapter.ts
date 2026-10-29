@@ -59,31 +59,15 @@ export class OpenAIRealtimeAdapter implements VoiceProvider {
         },
         body: JSON.stringify(payload),
       });
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-      throw VoiceProviderError.fromRaw(
-        "openai-realtime",
-        "createSession",
-        `Network error: ${message}`,
-      );
+    } catch {
+      throw new VoiceProviderError("openai-realtime", "createSession", "Network request failed");
     }
 
     if (!response.ok) {
-      const rawText = await response.text();
-      let errorDetail = rawText;
-      try {
-        const parsed = JSON.parse(rawText);
-        if (parsed.error?.message) {
-          errorDetail = parsed.error.message;
-        }
-      } catch {
-        // keep raw text
-      }
-
-      throw VoiceProviderError.fromRaw(
+      throw new VoiceProviderError(
         "openai-realtime",
         "createSession",
-        `OpenAI Realtime API error (status ${response.status}): ${errorDetail}`,
+        "OpenAI Realtime API request failed",
         response.status,
       );
     }
@@ -101,6 +85,7 @@ export class OpenAIRealtimeAdapter implements VoiceProvider {
     }
 
     return {
+      provider: "openai-realtime",
       sessionId: data.id || `sess_${Date.now()}`,
       clientSecret: clientSecretValue,
       model: data.model || payload.model,

@@ -1,231 +1,118 @@
 import { describe, expect, it, mock } from "bun:test";
-import {
-  VoiceSessionManager,
-  type VoiceSessionState,
-} from "../src/features/voice/voice-session-manager";
+import { VoiceSessionManager } from "../src/features/voice/voice-session-manager";
+import type { VoiceTransport, VoiceTransportEvents } from "../src/features/voice/voice-transport";
 
-// Mock WebRTC DataChannel
-class MockDataChannel {
-  name: string;
-  sentMessages: string[] = [];
-  onmessage: ((event: { data: string }) => void) | null = null;
-  onopen: (() => void) | null = null;
-  onclose: (() => void) | null = null;
-  readyState = "open";
-
-  constructor(name: string) {
-    this.name = name;
+class FakeTransport implements VoiceTransport {
+  events?: VoiceTransportEvents;
+  muted = false;
+  disconnect = mock(() => {});
+  async connect(events: VoiceTransportEvents) {
+    this.events = events;
   }
-
-  send(data: string) {
-    this.sentMessages.push(data);
-  }
-
-  close() {
-    this.readyState = "closed";
-    if (this.onclose) this.onclose();
-  }
-
-  // Helper for test to simulate receiving an event from OpenAI
-  simulateMessage(data: Record<string, unknown>) {
-    if (this.onmessage) {
-      this.onmessage({ data: JSON.stringify(data) });
-    }
-  }
-}
-
-// Mock WebRTC PeerConnection
-class MockRTCPeerConnection {
-  dataChannel: MockDataChannel | null = null;
-  localDescription: { type: string; sdp: string } | null = null;
-  remoteDescription: { type: string; sdp: string } | null = null;
-  tracks: any[] = [];
-  ontrack: ((event: any) => void) | null = null;
-  connectionState = "new";
-
-  createDataChannel(name: string) {
-    this.dataChannel = new MockDataChannel(name);
-    return this.dataChannel;
-  }
-
-  addTrack(track: any) {
-    this.tracks.push(track);
-  }
-
-  async createOffer() {
-    return { type: "offer", sdp: "v=0\r\no=mock-offer" };
-  }
-
-  async setLocalDescription(desc: any) {
-    this.localDescription = desc;
-  }
-
-  async setRemoteDescription(desc: any) {
-    this.remoteDescription = desc;
-  }
-
-  close() {
-    this.connectionState = "closed";
-    if (this.dataChannel) {
-      this.dataChannel.close();
-    }
-  }
-}
-
-// Mock Audio Track & MediaStream
-class MockMediaStreamTrack {
-  enabled = true;
-  stop = mock(() => {});
-}
-
-class MockMediaStream {
-  tracks: MockMediaStreamTrack[] = [new MockMediaStreamTrack()];
-  getAudioTracks() {
-    return this.tracks;
+  setMuted(muted: boolean) {
+    this.muted = muted;
   }
 }
 
 describe("VoiceSessionManager", () => {
-  it("initializes in idle state", () => {
-    const manager = new VoiceSessionManager();
-    expect(manager.getState()).toBe("idle");
-    expect(manager.isMuted()).toBe(false);
-  });
-
-  it("transitions states during connection and negotiates WebRTC SDP", async () => {
-    const mockPc = new MockRTCPeerConnection();
-    const mockStream = new MockMediaStream();
-
-    const states: VoiceSessionState[] = [];
-    const manager = new VoiceSessionManager({
-      createPeerConnection: () => mockPc as any,
-      getUserMedia: async () => mockStream as any,
-      fetchSessionToken: async () => ({
-        sessionId: "sess_123",
-        clientSecret: "ek_token_abc",
-        model: "gpt-4o-realtime-preview-2024-12-17",
-      }),
-      sendSdpOffer: async (sdp, secret) => {
-        expect(secret).toBe("ek_token_abc");
-        expect(sdp).toBe("v=0\r\no=mock-offer");
-        return "v=0\r\no=mock-answer";
-      },
-    });
-
+  it("drives state, transcripts, tools and mute without vendor protocol", async () => {
+    const transport = new FakeTransport();
+    const executeTool = mock(async () => ({ success: true }));
+    const manager = new VoiceSessionManager({ transport, executeTool });
+    const states: string[] = [];
+    const transcripts: string[] = [];
     manager.onStateChange((state) => states.push(state));
-
+    manager.onTranscript((text) => transcripts.push(text));
     await manager.connect();
-
-    expect(states).toContain("connecting");
-    expect(states).toContain("connected");
-    expect(manager.getState()).toBe("connected");
-    expect(mockPc.localDescription?.sdp).toBe("v=0\r\no=mock-offer");
-    expect(mockPc.remoteDescription?.sdp).toBe("v=0\r\no=mock-answer");
-  });
-
-  it("handles incoming function call, executes tool handler, and returns output via DataChannel", async () => {
-    const mockPc = new MockRTCPeerConnection();
-    const mockStream = new MockMediaStream();
-    const executedTools: Array<{ name: string; args: any }> = [];
-
-    const manager = new VoiceSessionManager({
-      createPeerConnection: () => mockPc as any,
-      getUserMedia: async () => mockStream as any,
-      fetchSessionToken: async () => ({
-        sessionId: "sess_123",
-        clientSecret: "ek_token_abc",
-        model: "gpt-4o-realtime-preview-2024-12-17",
-      }),
-      sendSdpOffer: async () => "v=0\r\no=mock-answer",
-      executeTool: async (toolName, toolArgs) => {
-        executedTools.push({ name: toolName, args: toolArgs });
-        return { success: true, message: "Appointment confirmed" };
-      },
+    transport.events!.onState("listening");
+    transport.events!.onState("speaking");
+    transport.events!.onTranscript("Hello", false);
+    expect(states).toEqual(["connecting", "connected", "listening", "speaking"]);
+    expect(transcripts).toEqual(["Hello"]);
+    expect(await transport.events!.executeTool("check_availability", {})).toEqual({
+      success: true,
     });
-
-    await manager.connect();
-
-    const dataChannel = mockPc.dataChannel!;
-    expect(dataChannel).not.toBeNull();
-
-    // Simulate OpenAI Realtime calling check_availability
-    dataChannel.simulateMessage({
-      type: "response.function_call_arguments.done",
-      call_id: "call_abc123",
-      name: "check_availability",
-      arguments: JSON.stringify({ serviceCode: "A", date: "2026-10-28" }),
-    });
-
-    // Wait microtask tick for async tool execution
-    await new Promise((r) => setTimeout(r, 10));
-
-    expect(executedTools).toHaveLength(1);
-    expect(executedTools[0]?.name).toBe("check_availability");
-    expect(executedTools[0]?.args.serviceCode).toBe("A");
-
-    // Verify DataChannel sent item.create and response.create
-    expect(dataChannel.sentMessages.length).toBe(2);
-
-    const itemCreate = JSON.parse(dataChannel.sentMessages[0]!);
-    expect(itemCreate.type).toBe("conversation.item.create");
-    expect(itemCreate.item.type).toBe("function_call_output");
-    expect(itemCreate.item.call_id).toBe("call_abc123");
-    expect(JSON.parse(itemCreate.item.output).message).toBe("Appointment confirmed");
-
-    const responseCreate = JSON.parse(dataChannel.sentMessages[1]!);
-    expect(responseCreate.type).toBe("response.create");
-  });
-
-  it("toggles microphone mute state", async () => {
-    const mockPc = new MockRTCPeerConnection();
-    const mockStream = new MockMediaStream();
-
-    const manager = new VoiceSessionManager({
-      createPeerConnection: () => mockPc as any,
-      getUserMedia: async () => mockStream as any,
-      fetchSessionToken: async () => ({
-        sessionId: "sess_1",
-        clientSecret: "ek_1",
-        model: "gpt-4o-realtime",
-      }),
-      sendSdpOffer: async () => "answer",
-    });
-
-    await manager.connect();
-
-    const track = mockStream.tracks[0]!;
-    expect(track.enabled).toBe(true);
-
-    manager.toggleMute();
-    expect(track.enabled).toBe(false);
-    expect(manager.isMuted()).toBe(true);
-
-    manager.toggleMute();
-    expect(track.enabled).toBe(true);
-    expect(manager.isMuted()).toBe(false);
-  });
-
-  it("disconnects and disposes all tracks and peer connections cleanly", async () => {
-    const mockPc = new MockRTCPeerConnection();
-    const mockStream = new MockMediaStream();
-
-    const manager = new VoiceSessionManager({
-      createPeerConnection: () => mockPc as any,
-      getUserMedia: async () => mockStream as any,
-      fetchSessionToken: async () => ({
-        sessionId: "sess_1",
-        clientSecret: "ek_1",
-        model: "gpt-4o-realtime",
-      }),
-      sendSdpOffer: async () => "answer",
-    });
-
-    await manager.connect();
-    expect(manager.getState()).toBe("connected");
-
+    expect(executeTool).toHaveBeenCalledTimes(1);
+    expect(manager.toggleMute()).toBe(true);
+    expect(transport.muted).toBe(true);
     manager.disconnect();
+    transport.events!.onState("connected");
     expect(manager.getState()).toBe("disconnected");
-    expect(mockPc.connectionState).toBe("closed");
-    expect(mockStream.tracks[0]?.stop).toHaveBeenCalled();
+    expect(transport.disconnect).toHaveBeenCalled();
+  });
+
+  it("ignores callbacks after a connection fails", async () => {
+    let events!: VoiceTransportEvents;
+    const transport: VoiceTransport = {
+      connect: async (callbacks) => {
+        events = callbacks;
+        throw new Error("failed");
+      },
+      disconnect: mock(() => {}),
+      setMuted: () => {},
+    };
+    const manager = new VoiceSessionManager({ transport });
+    await expect(manager.connect()).rejects.toThrow("failed");
+    events.onState("connected");
+    expect(manager.getState()).toBe("error");
+  });
+
+  it("ignores a connection completion after disconnect", async () => {
+    let resolve!: () => void;
+    const transport: VoiceTransport = {
+      connect: () =>
+        new Promise<void>((r) => {
+          resolve = r;
+        }),
+      disconnect: mock(() => {}),
+      setMuted: () => {},
+    };
+    const manager = new VoiceSessionManager({ transport });
+    const connecting = manager.connect();
+    manager.disconnect();
+    resolve();
+    await connecting;
+    expect(manager.getState()).toBe("disconnected");
+  });
+
+  it("reports recoverable warnings without disconnecting", async () => {
+    const transport = new FakeTransport();
+    const manager = new VoiceSessionManager({ transport });
+    const errors: string[] = [];
+    manager.onError((error) => errors.push(error.message));
+    await manager.connect();
+    transport.events!.onWarning(new Error("provider warning"));
+    expect(manager.getState()).toBe("connected");
+    expect(transport.disconnect).not.toHaveBeenCalled();
+    expect(errors).toEqual(["provider warning"]);
+    manager.disconnect();
+    transport.events!.onWarning(new Error("stale warning"));
+    expect(errors).toEqual(["provider warning"]);
+  });
+
+  it("releases the transport on provider failure", async () => {
+    const transport = new FakeTransport();
+    const manager = new VoiceSessionManager({ transport });
+    const errors: string[] = [];
+    manager.onError((error) => errors.push(error.message));
+    await manager.connect();
+    transport.events!.onError(new Error("connection failed"));
+    expect(manager.getState()).toBe("error");
+    expect(transport.disconnect).toHaveBeenCalled();
+    expect(errors).toEqual(["connection failed"]);
+    transport.events!.onState("connected");
+    expect(manager.getState()).toBe("error");
+  });
+
+  it("ignores events from a disconnected connection", async () => {
+    const transport = new FakeTransport();
+    const manager = new VoiceSessionManager({ transport });
+    await manager.connect();
+    const oldEvents = transport.events!;
+    manager.disconnect();
+    await manager.connect();
+    oldEvents.onState("speaking");
+    expect(manager.getState()).toBe("connected");
+    await expect(oldEvents.executeTool("book", {})).rejects.toThrow("disconnected");
   });
 });

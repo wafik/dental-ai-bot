@@ -81,6 +81,7 @@ describe("OpenAIRealtimeAdapter", () => {
     expect(capturedBody.voice).toBe("verse");
     expect(capturedBody.temperature).toBe(0.4);
     expect(session.voice).toBe("verse");
+    expect(session.provider).toBe("openai-realtime");
   });
 
   it("handles 401 Unauthorized without leaking API key", async () => {
@@ -105,7 +106,8 @@ describe("OpenAIRealtimeAdapter", () => {
       expect(err).toBeInstanceOf(VoiceProviderError);
       expect(err.status).toBe(401);
       expect(err.message).not.toContain("sk-secret-leak");
-      expect(err.message).toContain("[REDACTED]");
+      expect(err.message).toContain("OpenAI Realtime API request failed");
+      expect(err.message).not.toContain("Incorrect API key provided");
     }
   });
 
@@ -140,7 +142,8 @@ describe("OpenAIRealtimeAdapter", () => {
       expect(true).toBe(false);
     } catch (err: any) {
       expect(err).toBeInstanceOf(VoiceProviderError);
-      expect(err.message).toContain("Connection reset by peer");
+      expect(err.message).toContain("Network request failed");
+      expect(err.message).not.toContain("Connection reset by peer");
     }
   });
 });

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { OpenAIVoiceTransport } from "./openai-voice-transport";
 import {
   VoiceSessionManager,
   type VoiceSessionManagerOptions,
@@ -21,8 +22,14 @@ export function useRealtimeVoice(options?: VoiceSessionManagerOptions) {
   const [transcripts, setTranscripts] = useState<TranscriptItem[]>([]);
   const managerRef = useRef<VoiceSessionManager | null>(null);
 
+  const transport = options?.transport;
+  const executeTool = options?.executeTool;
+
   useEffect(() => {
-    const manager = new VoiceSessionManager(options);
+    const manager = new VoiceSessionManager({
+      transport: transport ?? new OpenAIVoiceTransport(),
+      executeTool,
+    });
     managerRef.current = manager;
 
     const unsubState = manager.onStateChange((newState) => {
@@ -54,7 +61,7 @@ export function useRealtimeVoice(options?: VoiceSessionManagerOptions) {
       unsubTranscript();
       manager.disconnect();
     };
-  }, [options]);
+  }, [transport, executeTool]);
 
   const connect = async () => {
     setError(null);

@@ -1,5 +1,39 @@
 import { z } from "zod";
 
+export const CHAT_USER_MESSAGE_MAX_LENGTH = 2_000;
+export const CHAT_ASSISTANT_MESSAGE_MAX_LENGTH = 8_000;
+export const CHAT_HISTORY_MAX_MESSAGES = 60;
+export const CHAT_HISTORY_MAX_CHARACTERS = 32_000;
+export const CHAT_REQUEST_MAX_BYTES = 256 * 1024;
+
+export const publicChatMessageSchema = z.discriminatedUnion("role", [
+  z.strictObject({
+    role: z.literal("user"),
+    content: z.string().trim().min(1).max(CHAT_USER_MESSAGE_MAX_LENGTH),
+  }),
+  z.strictObject({
+    role: z.literal("assistant"),
+    content: z.string().max(CHAT_ASSISTANT_MESSAGE_MAX_LENGTH),
+  }),
+]);
+export type PublicChatMessage = z.infer<typeof publicChatMessageSchema>;
+export const chatRequestSchema = z.strictObject({
+  messages: z
+    .array(publicChatMessageSchema)
+    .min(1)
+    .max(CHAT_HISTORY_MAX_MESSAGES)
+    .refine(
+      (messages) =>
+        messages.reduce((total, message) => total + message.content.length, 0) <=
+        CHAT_HISTORY_MAX_CHARACTERS,
+      "History is too long",
+    )
+    .refine(
+      (messages) => messages.at(-1)?.role === "user",
+      "The final message must be from the user",
+    ),
+});
+
 /**
  * First error message per top-level field, keyed by field name. Safe to call
  * during render: invalid input maps to messages instead of throwing, so the
@@ -52,7 +86,7 @@ export function calendarIdError(calendarId: string): string | undefined {
  * already disabled in that state, so flagging it would just add noise.
  */
 export const chatMessageSchema = z.object({
-  message: z.string().max(2000, "Message must be 2000 characters or fewer"),
+  message: z.string().max(CHAT_USER_MESSAGE_MAX_LENGTH, "Message must be 2000 characters or fewer"),
 });
 
 export const scheduleDateSchema = z.object({

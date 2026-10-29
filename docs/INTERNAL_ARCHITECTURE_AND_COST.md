@@ -90,9 +90,9 @@ flowchart TB
 
 ### 2.1 Provider-Agnostic AI & Voice Integration
 
-* **Decision:** Implement decoupled contracts (`LLMProvider` and `VoiceProvider`) with standalone adapter implementations.
-* **Why:** Prevents vendor lock-in. While OpenAI Realtime is implemented as the primary WebRTC engine, switching to Gemini Live, ElevenLabs Conversational, Deepgram, or Vapi requires only introducing an adapter conforming to the interface without touching clinical scheduling logic.
-* **Security Guard:** Never expose master API keys to client browsers. The server issues a short-lived ephemeral session token (`client_secret.value`) via `/api/v1/voice/session` with an expiry window of under 60 seconds.
+* **Decision:** Use provider-neutral LLM and server voice contracts. The browser voice session manager delegates media and protocol handling to a transport; the OpenAI transport implements WebRTC negotiation and Realtime events.
+* **Why:** A different voice provider requires its own server and browser adapters and explicit composition, without changing the generic session manager or clinical scheduling logic. OpenAI Realtime is the only implemented voice provider.
+* **Security Guard:** Never expose master API keys to client browsers. The server returns an ephemeral credential and public session metadata with an explicit provider discriminator; the OpenAI transport validates it before requesting microphone access.
 
 ### 2.2 Dual-Calendar Parity (Google Calendar + Microsoft Outlook)
 
@@ -203,7 +203,7 @@ A full-time dental receptionist in the US/UK costs between $3,000 and $4,500/mon
 ### 4.2 Medical Guardrails & Scope Limitation
 * **Strict Deflection:** Inquiries attempting to elicit dental diagnoses, prescription advice, antibiotic dosages, or emergency triage trigger automatic deflection:
   > *"I am an automated appointment scheduling assistant and cannot provide dental diagnoses or prescribe medications. Please consult with our licensed dentists during your appointment, or visit an urgent care center if you are experiencing severe pain or bleeding."*
-* **Prompt Injection Defenses:** The input sanitizer intercepts jailbreak attempts (`DAN`, `ignore previous instructions`, `system prompt leak`) before forwarding queries to the LLM.
+* **Prompt Injection Defenses:** The server owns chat system instructions and accepts only bounded user and assistant text as public history. This history is untrusted: assistant messages may be fabricated and do not prove prior tool execution. Internal tool messages remain server-owned. The input sanitizer detects some injection patterns, but it is not a complete defense; scope adherence and English-only responses remain probabilistic model behavior.
 
 ### 4.3 Production Settings & Secrets Management (Database vs Environment Variables)
 

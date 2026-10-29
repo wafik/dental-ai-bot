@@ -9,13 +9,16 @@ describe("Voice API Route Handlers", () => {
   describe("POST /api/v1/voice/session", () => {
     it("returns ephemeral session token when voice provider succeeds", async () => {
       const mockVoiceProvider: VoiceProvider = {
-        createSession: async (): Promise<VoiceSessionResponse> => ({
-          sessionId: "sess_mock_123",
-          clientSecret: "ek_mock_token_456",
-          model: "gpt-4o-realtime-preview-2024-12-17",
-          voice: "alloy",
-          expiresAt: 1730000000,
-        }),
+        createSession: async (): Promise<VoiceSessionResponse> =>
+          ({
+            provider: "openai-realtime",
+            sessionId: "sess_mock_123",
+            clientSecret: "ek_mock_token_456",
+            model: "gpt-4o-realtime-preview-2024-12-17",
+            voice: "alloy",
+            expiresAt: 1730000000,
+            masterKey: "dummy-secret-not-for-client",
+          }) as VoiceSessionResponse,
       };
 
       const handler = createVoiceSessionHandler({ voiceProvider: mockVoiceProvider });
@@ -28,6 +31,9 @@ describe("Voice API Route Handlers", () => {
 
       const json = await response.json();
       expect(json.success).toBe(true);
+      expect(response.headers.get("cache-control")).toBe("no-store");
+      expect(json.data.provider).toBe("openai-realtime");
+      expect(json.data.masterKey).toBeUndefined();
       expect(json.data.sessionId).toBe("sess_mock_123");
       expect(json.data.clientSecret).toBe("ek_mock_token_456");
     });

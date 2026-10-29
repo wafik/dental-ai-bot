@@ -6,11 +6,11 @@ Welcome to the **BrightSmile Dental AI Appointment System**! This guide is desig
 
 ## 1. What is the Dental AI Assistant?
 
-The Dental AI Assistant is an automated, 24/7 receptionist that lives on your clinic's website and phone line. It speaks fluently with your patients using natural voice and interactive chat.
+The Dental AI Assistant is a web-based appointment assistant with conversational voice and text chat. Availability depends on the application and its configured providers; telephone-line integration is not included.
 
 ### Key Business Benefits for Your Clinic:
-1. **Never Miss a New Patient Call:** More than 35% of patient appointment requests occur after clinic hours (evenings and weekends). The AI answers instantly with zero wait times.
-2. **Eliminates Double Bookings:** The assistant checks your real-time dentist availability and directly syncs confirmed bookings into your Google Calendar or Microsoft Outlook schedule.
+1. **Online appointment enquiries:** Patients can use chat or browser voice when the service and its providers are available.
+2. **Calendar-aware scheduling:** The assistant checks the configured dentist calendars and writes bookings to the selected Google Calendar or Microsoft Outlook provider. It does not update both providers simultaneously. An unconfigured calendar can fall back to a mock provider and does not sync externally; verify configuration before accepting real bookings.
 3. **Smart Doctor Assignment:** 
    * Simple checkups and extractions can be assigned to your Junior Dentist.
    * Complex treatments (Root Canals, Crowns, Implants) are automatically reserved exclusively for your Senior Specialists.
@@ -79,7 +79,7 @@ If your clinic uses Microsoft 365 Outlook:
 > the eye icon reveals text you are currently typing, never the stored value. Leaving a credential
 > field empty keeps the previously saved secret unchanged.
 
-Once connected, any appointment booked by the AI will immediately appear on the doctor's phone and computer calendar!
+With a correctly configured provider, bookings are written to the selected calendar. Verify calendar access and synchronization before relying on it for patient appointments.
 
 ---
 
@@ -114,17 +114,17 @@ The base URL must be reachable from the Next.js server and expose Kokoro-FastAPI
 ## 5. Frequently Asked Questions (FAQ)
 
 #### Q1: What happens if a patient asks for medical advice or an antibiotic prescription?
-**Answer:** The AI has built-in medical safety guardrails. It will politely inform the patient:
+**Answer:** The AI is instructed not to provide diagnoses or prescriptions, but its responses are not guaranteed. A suitable response would be:
 > *"I am an automated scheduling assistant and cannot provide medical diagnoses or prescribe medications. Please discuss your symptoms with our dentist during your appointment, or seek emergency medical attention if you are in severe pain."*
 
 #### Q2: Can a patient book an appointment outside clinic hours?
 **Answer:** No. Clinic hours are strictly enforced from **09:00 AM to 05:00 PM (09:00 - 17:00)**. The AI will never book an appointment that starts before 09:00 or ends after 17:00.
 
 #### Q3: What happens if a doctor adds an appointment directly into Google or Outlook?
-**Answer:** The AI checks your calendar before offering any time slot to patients. If a doctor has a meeting, personal break, or offline patient booked on their calendar, that time is automatically treated as busy and will not be offered to new callers.
+**Answer:** When the selected calendar provider is correctly configured and reachable, its busy intervals are checked before offering slots. The mock fallback cannot see external events, so it must not be relied on for real appointments.
 
 #### Q4: How does the AI handle patient cancellations?
-**Answer:** Patients can speak or chat with the bot to cancel an existing appointment by providing their confirmation code or phone number. The time slot is immediately released and made available for other patients.
+**Answer:** The assistant can cancel a local appointment using its appointment ID. Cancellation does not currently delete the corresponding external calendar event, so clinic staff must update that calendar manually; the slot may remain unavailable until they do.
 
 ---
 

@@ -24,7 +24,12 @@ import {
   Play,
   RotateCcw,
 } from "lucide-react";
-import { chatMessageSchema, collectFieldErrors } from "@/utils/form-validation";
+import {
+  CHAT_USER_MESSAGE_MAX_LENGTH,
+  chatMessageSchema,
+  collectFieldErrors,
+} from "@/utils/form-validation";
+import { selectRecentChatHistory } from "@/utils/chat-history";
 import type { LLMChatMessage } from "@/providers/ai/llm-provider";
 import { ChatTtsPlayer, type ChatTtsStatus } from "@/features/tts/chat-tts-player";
 
@@ -104,7 +109,7 @@ export function ChatWidget({ initialPrompt, onAppointmentBooked }: ChatWidgetPro
       const res = await fetch("/api/v1/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: updatedMessages }),
+        body: JSON.stringify({ messages: selectRecentChatHistory(updatedMessages) }),
       });
 
       if (!res.ok) {
@@ -279,7 +284,7 @@ export function ChatWidget({ initialPrompt, onAppointmentBooked }: ChatWidgetPro
               onChange={(e) => setInput(e.target.value)}
               placeholder="Type your question or booking request..."
               className="text-xs h-9"
-              maxLength={2000}
+              maxLength={CHAT_USER_MESSAGE_MAX_LENGTH}
               disabled={loading}
               aria-invalid={Boolean(messageError)}
               aria-describedby={messageError ? "chat-message-error" : undefined}

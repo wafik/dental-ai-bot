@@ -17,6 +17,7 @@ export type VoiceSessionConfig = {
 };
 
 export type VoiceSessionResponse = {
+  provider: "openai-realtime";
   sessionId: string;
   clientSecret: string;
   model: string;

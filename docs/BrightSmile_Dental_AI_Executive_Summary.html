@@ -241,7 +241,7 @@
           <div>
             <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 3px;">
               <span class="tag tag-neutral">TECHNICAL REPORT &amp; ARCHITECTURE BRIEF</span>
-              <span class="tag tag-green">VERIFIED PRODUCTION SYSTEM</span>
+              <span class="tag tag-green">IMPLEMENTATION OVERVIEW</span>
             </div>
             <h1 class="title-h1">BrightSmile Dental AI Platform</h1>
             <p class="subtitle-p">
@@ -306,7 +306,7 @@
           <div class="pipeline-step">
             <div class="pipeline-number">Step 05 &bull; Storage</div>
             <div class="pipeline-title">Atomic Commit</div>
-            <p>PostgreSQL row-level locks prevent race collisions while background adapters sync Google and Outlook calendars.</p>
+            <p>PostgreSQL advisory transaction locks coordinate bookings per dentist and date. One selected calendar provider receives each booking; external edits are not locked.</p>
           </div>
         </div>
       </div>
@@ -436,13 +436,13 @@
             </div>
             <h1 class="title-h1">Voice Architecture, Calendar Sync &amp; Financials</h1>
             <p class="subtitle-p">
-              Low-latency conversational voice mechanics, dual-calendar parity, and practice ROI modeling.
+              Conversational voice mechanics, selectable calendar providers, and illustrative practice ROI modeling.
             </p>
           </div>
           <div class="doc-meta">
             <div><strong style="color: #18181b;">Page 2 of 2</strong></div>
             <div>Infrastructure &amp; ROI Analysis</div>
-            <div>Environment: Production Ready</div>
+            <div>Environment: Deployment validation required</div>
           </div>
         </div>
       </div>
@@ -527,7 +527,7 @@
         <div class="panel-muted" style="padding: 5px 10px; margin-bottom: 6px; display: flex; align-items: center; justify-content: space-between;">
           <span style="font-size: 7pt; font-weight: 600; color: #18181b; text-transform: uppercase; letter-spacing: 0.04em;">Atomic Concurrency Model:</span>
           <span style="font-size: 7.2pt; color: #52525b;">
-            1. Fetch Database Bookings &rarr; 2. Query External FreeBusy &rarr; 3. Overlap Check (<code>s &lt; end && e &gt; start</code>) &rarr; 4. Postgres Row-Level Lock Settlement
+            Postgres advisory transaction lock per dentist and date &rarr; check local bookings and selected provider availability &rarr; create booking
           </span>
         </div>
       </div>
@@ -608,7 +608,7 @@
                 <span style="font-size: 7.5pt; font-weight: 600; color: #166534;">$599.05 / mo</span>
               </div>
               <p style="font-size: 6.8pt; color: #52525b; line-height: 1.35;">
-                24/7/365 continuous availability with immediate response, concurrent call handling, and real-time calendar locks.
+                Browser voice and chat depend on application and provider availability; telephony and guaranteed response times are not included.
               </p>
             </div>
             <div class="panel" style="background: #18181b; color: #ffffff; padding: 7px 10px;">
@@ -630,10 +630,10 @@
           <div style="display: flex; align-items: center; gap: 8px;">
             <span style="font-weight: 600; font-size: 7.2pt; color: #18181b; text-transform: uppercase; letter-spacing: 0.03em;">Verification Status:</span>
             <span style="font-size: 7pt; color: #52525b;">
-              185 unit tests passing &bull; 7 edge-case suites verified &bull; Playwright E2E browser flows validated &bull; Zero type errors
+              Automated tests use mocks for external providers. Live voice and calendar integration require separate validation.
             </span>
           </div>
-          <span class="tag tag-green" style="font-weight: 600;">Production Ready</span>
+          <span class="tag tag-green" style="font-weight: 600;">Validation Required</span>
         </div>
       </div>
 
