@@ -190,18 +190,18 @@
         <div>
           <h3 class="font-semibold text-slate-400 uppercase tracking-wider text-[10px]">Architecture Function</h3>
           <p id="node-desc" class="mt-1 text-slate-200 leading-relaxed">
-            Direct audio-to-audio WebRTC connection with OpenAI Realtime API. Zero intermediary Speech-To-Text or Text-To-Speech pipeline delays.
+            Direct audio-to-audio WebRTC connection with OpenAI Realtime API, so no separate speech-to-text hop is needed.
           </p>
         </div>
 
         <div class="grid grid-cols-2 gap-2">
           <div class="bg-slate-900/60 p-2.5 rounded-xl border border-slate-800">
-            <span class="text-[10px] text-slate-400 uppercase font-semibold">Latency / Speed</span>
-            <div id="node-metric1" class="text-sm font-bold text-sky-400 mt-0.5">&lt; 300 ms</div>
+            <span class="text-[10px] text-slate-400 uppercase font-semibold">Key Attribute</span>
+            <div id="node-metric1" class="text-sm font-bold text-sky-400 mt-0.5">Full-Duplex</div>
           </div>
           <div class="bg-slate-900/60 p-2.5 rounded-xl border border-slate-800">
-            <span class="text-[10px] text-slate-400 uppercase font-semibold">Security Standard</span>
-            <div id="node-metric2" class="text-sm font-bold text-emerald-400 mt-0.5">Ephemeral JWT</div>
+            <span class="text-[10px] text-slate-400 uppercase font-semibold">Design Trait</span>
+            <div id="node-metric2" class="text-sm font-bold text-emerald-400 mt-0.5">Ephemeral Token</div>
           </div>
         </div>
 
@@ -210,7 +210,7 @@
           <ul id="node-points" class="mt-1.5 space-y-1.5 text-slate-300">
             <li class="flex items-start gap-2">
               <span class="text-sky-400 mt-0.5">•</span>
-              <span>Ephemerality: Session secrets expire in under 60 seconds.</span>
+              <span>Ephemerality: the server issues a short-lived session token; the master API key never leaves the backend.</span>
             </li>
             <li class="flex items-start gap-2">
               <span class="text-sky-400 mt-0.5">•</span>
@@ -359,14 +359,14 @@
         color: 0x0284c7,
         emissive: 0x0284c7,
         tag: 'NODE 01: INBOUND',
-        desc: 'Direct audio-to-audio WebRTC connection with OpenAI Realtime API. Zero intermediary Speech-To-Text or Text-To-Speech pipeline delays. Next.js React 19 chat frontend with streaming tokens.',
-        m1: '< 300 ms',
+        desc: 'Direct audio-to-audio WebRTC connection with OpenAI Realtime API, so no separate speech-to-text hop is needed. The text chat is request/response per turn and renders each reply whole.',
+        m1: 'Full-Duplex',
         m2: 'WebRTC / Opus',
         endpoint: 'Client Browser ➔ OpenAI Media Gate',
         points: [
           'Full-duplex natural audio with instant interrupt handling.',
-          'Next.js 16 App Router chat client with real-time markdown streaming.',
-          'Accessible shadcn/ui components with realtime feedback.'
+          'Next.js 16 App Router chat client, one complete reply per turn.',
+          'Accessible shadcn/ui components with optional speech playback.'
         ]
       },
       {
@@ -377,14 +377,14 @@
         color: 0xef4444,
         emissive: 0xdc2626,
         tag: 'NODE 02: SECURITY EDGE',
-        desc: 'In-memory sliding window IP rate limiter and strict clinical sanitizer. Deflects jailbreak attempts (DAN, prompt injections) and intercepts medical advice queries without consuming LLM tokens.',
-        m1: '0 Tokens Wasted',
+        desc: 'In-memory sliding window IP rate limiter and a pattern-based clinical sanitizer. Known jailbreak phrasings and common medical-advice requests are answered with a fixed deflection before any model call, so those turns cost no tokens.',
+        m1: 'No-Token Deflection',
         m2: 'Sliding Window',
         endpoint: 'src/safety/sanitizer.ts',
         points: [
           'Automatic deflection of oral cancer, antibiotic, or dosage inquiries.',
-          'Prompt injection regex blocks DAN & system instruction leaks.',
-          'Returns official medical disclaimers directing patients to in-clinic care.'
+          'Regex blocks known injection phrasings (DAN, "ignore previous instructions", system-prompt probes); it is a filter, not a complete defense.',
+          'Returns a medical disclaimer directing patients to in-clinic or emergency care.'
         ]
       },
       {
@@ -395,8 +395,8 @@
         color: 0x6366f1,
         emissive: 0x4f46e5,
         tag: 'NODE 03: API GATEWAY',
-        desc: 'Server-side API routes issuing short-lived ephemeral session secrets (<60s expiry) to prevent master API key leakage. Receives tool call requests over WebRTC DataChannel.',
-        m1: '< 60s Expiry',
+        desc: 'Server-side API route issuing a short-lived ephemeral client secret so the master API key never reaches the browser. Receives tool call requests over the WebRTC DataChannel, which are executed by the server.',
+        m1: 'Ephemeral',
         m2: 'Zero Key Leak',
         endpoint: 'POST /api/v1/voice/session & /tools',
         points: [
@@ -414,31 +414,31 @@
         emissive: 0x059669,
         tag: 'NODE 04: CORE ENGINE',
         desc: 'Authoritative clinical rule validation. Enforces doctor scope: Dr. Junior is restricted to Services A & B, while Dr. Senior 1 & 2 handle full scope (A through E). Hard rules override AI suggestions.',
-        m1: '100% Compliant',
-        m2: 'Deterministic',
+        m1: 'Deterministic',
+        m2: 'Server-Enforced',
         endpoint: 'src/services/appointment-service.ts',
         points: [
           'Junior restricted from Root Canal (C), Crown (D), and Implant Surgery (E).',
-          'Automatic slot expansion (6h surgery expands to 12 consecutive 30-min slots).',
-          'Intelligent doctor rerouting if patient requests unqualified procedure.'
+          'A long service needs one contiguous free window, so a 6h surgery only fits if 09:00–15:00 stays clear.',
+          'Unqualified requests are rejected by the service with a typed error; the assistant then recommends a senior dentist.'
         ]
       },
       {
         id: 'database',
         title: 'PostgreSQL Database',
-        sub: 'Drizzle ORM & Row Locks',
+        sub: 'Drizzle ORM & Advisory Locks',
         pos: [6.2, -1.6, -2.5],
         color: 0xf59e0b,
         emissive: 0xd97706,
         tag: 'NODE 05: PERSISTENCE',
-        desc: 'Managed PostgreSQL database storing appointments, clinic settings, and dentist calendar mappings. Enforces atomic interval overlap collision locks to guarantee zero double-booking.',
-        m1: '0 Collisions',
+        desc: 'Managed PostgreSQL database storing appointments, clinic settings, and dentist calendar mappings. A transaction-scoped advisory lock per (dentist, date) plus an overlap re-check prevents two concurrent transactions from booking the same slot.',
+        m1: 'Advisory Locked',
         m2: 'ACID Atomic',
         endpoint: 'appointments & clinic_settings',
         points: [
           'Atomic collision detection (start < existingEnd && end > existingStart).',
-          'Dynamic doctor calendar mappings editable without code redeployment.',
-          'Zero-downtime runtime configuration updates.'
+          'Doctor calendar mappings are editable from the admin console, no redeploy required.',
+          'Settings and credentials apply on the next request without restarting the server.'
         ]
       },
       {
@@ -449,13 +449,13 @@
         color: 0x38bdf8,
         emissive: 0x0284c7,
         tag: 'NODE 06: CALENDAR SYNC',
-        desc: 'Bidirectional calendar integration. Google Calendar API v3 with OAuth token rotation & FreeBusy queries, plus Microsoft 365 Outlook calendarView with @odata.nextLink pagination.',
+        desc: 'Calendar integration with both providers. Google Calendar API v3 with FreeBusy queries and caller-supplied event IDs, plus Microsoft 365 calendarView with @odata.nextLink pagination. Each provider keeps its own retry state, so a failed write stays pending instead of reporting a false success.',
         m1: 'RFC3339 UTC',
         m2: 'Dual Sync',
         endpoint: 'Google API v3 & MS Graph',
         points: [
           'Provider-neutral CalendarProvider interface.',
-          'In-memory token caching with proactive renewal 5m before expiry.',
+          'In-memory token caching with proactive renewal 60 seconds before expiry.',
           'Strict UTC ISO string conversion preventing timezone drift.'
         ]
       }
