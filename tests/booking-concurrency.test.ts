@@ -2,11 +2,9 @@ import { describe, expect, it } from "bun:test";
 import type { AppointmentRecord } from "../src/domain/appointment";
 import type {
   BusyInterval,
-  CalendarEventInput,
   CalendarProvider,
   CreatedCalendarEvent,
 } from "../src/providers/calendar/calendar-provider";
-import type { AppointmentRepository } from "../src/repository/appointment-repository";
 import { InMemoryAppointmentRepository } from "../src/repository/in-memory-appointment-repository";
 import { AppointmentService } from "../src/services/appointment-service";
 
@@ -50,21 +48,9 @@ class ThrowingCalendarProvider implements CalendarProvider {
   async createEvent(): Promise<CreatedCalendarEvent> {
     throw new Error("provider exploded: token abc123");
   }
-}
 
-class FlakyCalendarProvider implements CalendarProvider {
-  private attempts = 0;
-
-  async getBusyIntervals(): Promise<BusyInterval[]> {
-    return [];
-  }
-
-  async createEvent(input: CalendarEventInput): Promise<CreatedCalendarEvent> {
-    this.attempts += 1;
-    if (this.attempts === 1) {
-      throw new Error("first attempt fails");
-    }
-    return { id: `cal-evt-${this.attempts}`, start: input.start, end: input.end };
+  async deleteEvent(): Promise<void> {
+    throw new Error("provider exploded: token abc123");
   }
 }
 
@@ -97,7 +83,6 @@ describe("Atomic booking reservations", () => {
 
     expect(reserved.id).toBe(record.id);
     expect(reserved.status).toBe("pending");
-    expect(reserved.calendarEventId).toBeUndefined();
   });
 
   it("allows exactly one of two concurrent overlapping service bookings", async () => {
@@ -119,77 +104,45 @@ describe("Atomic booking reservations", () => {
 });
 
 describe("Calendar synchronization failures", () => {
-  it("marks the reservation failed and reports CALENDAR_SYNC_FAILED", async () => {
+  it("keeps the reservation pending with a durable retry row instead of reporting success", async () => {
     const repository = new InMemoryAppointmentRepository();
-    const service = new AppointmentService(repository, new ThrowingCalendarProvider());
+    const service = new AppointmentService(repository, { google: new ThrowingCalendarProvider() });
 
-    await expect(service.bookAppointment(bookingInput)).rejects.toMatchObject({
-      code: "CALENDAR_SYNC_FAILED",
-    });
+    const booked = await service.bookAppointment(bookingInput);
 
-    const rows = await repository.find({ date: DATE });
-    expect(rows).toHaveLength(1);
-    expect(rows[0]?.status).toBe("failed");
-    expect(rows[0]?.calendarEventId).toBeUndefined();
+    expect(booked.status).toBe("pending");
+
+    const syncs = await repository.getCalendarSyncs(booked.id);
+    expect(syncs).toHaveLength(1);
+    expect(syncs[0]).toMatchObject({ provider: "google", operation: "book", status: "pending" });
+    expect(syncs[0]?.attempts).toBe(1);
+    // Only a short, credential-free error code is persisted.
+    expect(syncs[0]?.lastError).toBe("google:unknown");
   });
 
-  it("never leaks the provider error text to the caller", async () => {
+  it("never leaks the provider error text into the stored sync state", async () => {
     const repository = new InMemoryAppointmentRepository();
-    const service = new AppointmentService(repository, new ThrowingCalendarProvider());
+    const service = new AppointmentService(repository, { google: new ThrowingCalendarProvider() });
 
-    try {
-      await service.bookAppointment(bookingInput);
-      throw new Error("expected booking to fail");
-    } catch (err: unknown) {
-      const error = err as Error & { code?: string };
-      expect(error.code).toBe("CALENDAR_SYNC_FAILED");
-      expect(error.message).toBe("Calendar synchronization failed. Please try again.");
-      expect(error.message).not.toContain("abc123");
-    }
+    const booked = await service.bookAppointment(bookingInput);
+    const syncs = await repository.getCalendarSyncs(booked.id);
+
+    expect(JSON.stringify(syncs)).not.toContain("abc123");
   });
 
-  it("still reports CALENDAR_SYNC_FAILED when releasing the reservation also fails", async () => {
+  it("keeps the pending reservation's slot blocked for later bookings", async () => {
     const repository = new InMemoryAppointmentRepository();
-    const releaseFails: AppointmentRepository = {
-      ...repository,
-      reserveIfAvailable: repository.reserveIfAvailable.bind(repository),
-      find: repository.find.bind(repository),
-      findById: repository.findById.bind(repository),
-      create: repository.create.bind(repository),
-      confirm: repository.confirm.bind(repository),
-      updateStatus: async () => {
-        throw new Error("database unavailable");
-      },
-    };
-    const service = new AppointmentService(releaseFails, new ThrowingCalendarProvider());
+    const service = new AppointmentService(repository, { google: new ThrowingCalendarProvider() });
 
-    await expect(service.bookAppointment(bookingInput)).rejects.toMatchObject({
-      code: "CALENDAR_SYNC_FAILED",
-    });
+    const first = await service.bookAppointment(bookingInput);
+    expect(first.status).toBe("pending");
 
-    // The reservation stays pending, so the slot remains blocked rather than
-    // risking a double booking while the release path is broken.
-    const rows = await repository.find({ date: DATE });
-    expect(rows).toHaveLength(1);
-    expect(rows[0]?.status).toBe("pending");
-  });
-
-  it("does not treat a failed reservation as busy for a later booking of the same slot", async () => {
-    const repository = new InMemoryAppointmentRepository();
-    const service = new AppointmentService(repository, new FlakyCalendarProvider());
-
-    await expect(service.bookAppointment(bookingInput)).rejects.toMatchObject({
-      code: "CALENDAR_SYNC_FAILED",
-    });
-
-    const booked = await service.bookAppointment({ ...bookingInput, patientName: "Retry Patient" });
-
-    expect(booked.status).toBe("confirmed");
-    expect(booked.calendarEventId).toBeDefined();
+    await expect(
+      service.bookAppointment({ ...bookingInput, patientName: "Second Patient" }),
+    ).rejects.toMatchObject({ code: "SLOT_UNAVAILABLE" });
 
     const active = await repository.find({ date: DATE, status: ["pending", "confirmed"] });
     expect(active).toHaveLength(1);
-    expect(active[0]?.patientName).toBe("Retry Patient");
   });
 });
 
@@ -228,21 +181,20 @@ describe("Non-overlapping bookings", () => {
 });
 
 describe("Confirmation and status transitions", () => {
-  it("confirms a pending reservation with its calendar event ID", async () => {
+  it("confirms a pending reservation", async () => {
     const repository = new InMemoryAppointmentRepository();
     const reserved = await repository.reserveIfAvailable(makeRecord("09:00", "10:00"));
 
-    const confirmed = await repository.confirm(reserved.id, "cal-evt-9");
+    const confirmed = await repository.confirm(reserved.id);
 
     expect(confirmed.status).toBe("confirmed");
-    expect(confirmed.calendarEventId).toBe("cal-evt-9");
     expect(confirmed.updatedAt >= reserved.updatedAt).toBe(true);
   });
 
   it("throws AppointmentNotFoundError when confirming an unknown reservation", async () => {
     const repository = new InMemoryAppointmentRepository();
 
-    await expect(repository.confirm("missing-id", "cal-evt-1")).rejects.toMatchObject({
+    await expect(repository.confirm("missing-id")).rejects.toMatchObject({
       code: "APPOINTMENT_NOT_FOUND",
     });
   });

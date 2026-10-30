@@ -39,7 +39,11 @@ export function AdminSettingsForm({ username }: { username: string }) {
   const statusRows = toStatusRows(admin.secrets);
 
   const mappedDentists = admin.mappings.filter(
-    (mapping) => mapping.calendarId.trim().length > 0 && !calendarIdError(mapping.calendarId),
+    (mapping) =>
+      mapping.googleCalendarId.trim().length > 0 &&
+      !calendarIdError(mapping.googleCalendarId) &&
+      mapping.outlookCalendarId.trim().length > 0 &&
+      !calendarIdError(mapping.outlookCalendarId),
   ).length;
 
   return (
@@ -139,7 +143,7 @@ export function AdminSettingsForm({ username }: { username: string }) {
               <span data-testid="mapped-dentists" className="font-medium text-foreground">
                 {mappedDentists}
               </span>{" "}
-              of {admin.mappings.length} dentists have a calendar mapped.
+              of {admin.mappings.length} dentists have both calendars mapped.
             </p>
             <Button
               type="button"

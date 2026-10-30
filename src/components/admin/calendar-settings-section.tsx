@@ -11,7 +11,6 @@ import {
   type CalendarMappingDraft,
   type CalendarProviderId,
   type DentistId,
-  type MappingProviderId,
 } from "@/domain/admin-settings";
 import { calendarIdError } from "@/utils/form-validation";
 
@@ -30,8 +29,13 @@ export type CalendarSettingsSectionProps = {
 const SELECT_CLASS =
   "h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50";
 
+const PROVIDER_FIELDS = [
+  { key: "googleCalendarId", label: "Google Calendar ID" },
+  { key: "outlookCalendarId", label: "Outlook Calendar ID" },
+] as const;
+
 /**
- * Presentational calendar provider and per-dentist mapping editor.
+ * Presentational calendar mode and per-dentist Google + Outlook calendar IDs.
  */
 export function CalendarSettingsSection({
   provider,
@@ -45,13 +49,14 @@ export function CalendarSettingsSection({
       <CardHeader>
         <CardTitle>Calendar integration</CardTitle>
         <CardDescription>
-          Choose the active calendar provider and map each dentist to a calendar.
+          Every booking is written to both Google Calendar and Outlook. Map each dentist to a
+          calendar in each provider.
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-5">
         <div className="flex flex-col gap-1.5">
           <label htmlFor="calendar-provider" className="text-sm font-medium text-foreground">
-            Calendar provider
+            Calendar synchronization
           </label>
           <select
             id="calendar-provider"
@@ -89,60 +94,48 @@ export function CalendarSettingsSection({
         <div className="flex flex-col gap-4">
           {DENTIST_IDS.map((id) => {
             const mapping = mappings.find((entry) => entry.dentistId === id);
-            const mappingProvider = mapping?.provider ?? "google";
-            const calendarId = mapping?.calendarId ?? "";
-            const calendarError = calendarIdError(calendarId);
 
             return (
               <div key={id} className="flex flex-col gap-2 rounded-lg border p-3">
                 <span className="text-sm font-medium text-foreground">{DENTIST_LABELS[id]}</span>
-                <div className="flex flex-col gap-2 sm:flex-row">
-                  <div className="flex flex-col gap-1.5 sm:w-44">
-                    <label
-                      htmlFor={`mapping-${id}-provider`}
-                      className="text-xs text-muted-foreground"
-                    >
-                      Provider
-                    </label>
-                    <select
-                      id={`mapping-${id}-provider`}
-                      className={SELECT_CLASS}
-                      value={mappingProvider}
-                      disabled={disabled}
-                      onChange={(event) =>
-                        onMappingChange(id, {
-                          provider: event.target.value as MappingProviderId,
-                        })
-                      }
-                    >
-                      <option value="google">Google Calendar</option>
-                      <option value="outlook">Outlook</option>
-                    </select>
-                  </div>
+                <div className="flex flex-col gap-3 sm:flex-row">
+                  {PROVIDER_FIELDS.map((field) => {
+                    const value = mapping?.[field.key] ?? "";
+                    const fieldError = calendarIdError(value);
+                    const inputId = `mapping-${id}-${field.key}`;
 
-                  <Field data-invalid={Boolean(calendarError)} className="flex-1 gap-1.5 sm:w-auto">
-                    <FieldLabel
-                      htmlFor={`mapping-${id}-calendar`}
-                      className="text-xs font-normal text-muted-foreground"
-                    >
-                      Calendar ID
-                    </FieldLabel>
-                    <Input
-                      id={`mapping-${id}-calendar`}
-                      value={calendarId}
-                      placeholder="e.g. clinic@gmail.com or abc123@group.calendar.google.com"
-                      disabled={disabled}
-                      onChange={(event) => onMappingChange(id, { calendarId: event.target.value })}
-                      aria-invalid={Boolean(calendarError)}
-                      aria-describedby={calendarError ? `mapping-${id}-calendar-error` : undefined}
-                      className={cn(
-                        calendarError && "border-destructive focus-visible:ring-destructive",
-                      )}
-                    />
-                    <FieldError id={`mapping-${id}-calendar-error`} className="text-xs">
-                      {calendarError}
-                    </FieldError>
-                  </Field>
+                    return (
+                      <Field
+                        key={field.key}
+                        data-invalid={Boolean(fieldError)}
+                        className="flex-1 gap-1.5"
+                      >
+                        <FieldLabel
+                          htmlFor={inputId}
+                          className="text-xs font-normal text-muted-foreground"
+                        >
+                          {field.label}
+                        </FieldLabel>
+                        <Input
+                          id={inputId}
+                          value={value}
+                          placeholder="e.g. clinic@gmail.com"
+                          disabled={disabled}
+                          onChange={(event) =>
+                            onMappingChange(id, { [field.key]: event.target.value })
+                          }
+                          aria-invalid={Boolean(fieldError)}
+                          aria-describedby={fieldError ? `${inputId}-error` : undefined}
+                          className={cn(
+                            fieldError && "border-destructive focus-visible:ring-destructive",
+                          )}
+                        />
+                        <FieldError id={`${inputId}-error`} className="text-xs">
+                          {fieldError}
+                        </FieldError>
+                      </Field>
+                    );
+                  })}
                 </div>
               </div>
             );

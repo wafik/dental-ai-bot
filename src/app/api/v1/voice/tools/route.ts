@@ -15,8 +15,8 @@ const GENERIC_ERROR = "Internal server error";
  * credentials from the admin area apply without a restart.
  */
 async function buildRuntimeAppointmentService(): Promise<AppointmentService> {
-  const calendarProvider = await getRuntimeCalendarProvider();
-  return new AppointmentService(getRuntimeAppointmentRepository(), calendarProvider);
+  const calendarProviders = await getRuntimeCalendarProvider();
+  return new AppointmentService(getRuntimeAppointmentRepository(), calendarProviders);
 }
 
 export function createVoiceToolsHandler(deps: VoiceToolsRouteDeps = {}) {

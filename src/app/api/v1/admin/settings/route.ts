@@ -29,15 +29,15 @@ const endpointSchema = z.object({
 });
 
 const updateSchema = z.object({
-  calendarProvider: z.enum(["none", "google", "outlook"]),
+  calendarProvider: z.enum(["none", "both"]),
   dentistMappings: z
     .array(
       z.object({
         dentistId: z.enum(["junior", "senior-1", "senior-2"]),
-        provider: z.enum(["google", "outlook"]),
-        // An empty calendar ID is how the operator clears a mapping; the
-        // runtime resolver treats blank entries as "not configured".
-        calendarId: z.string().trim().max(512),
+        // A blank calendar ID leaves the stored mapping untouched; the runtime
+        // resolver treats a missing mapping as "not configured".
+        googleCalendarId: z.string().trim().max(512),
+        outlookCalendarId: z.string().trim().max(512),
       }),
     )
     .max(6),

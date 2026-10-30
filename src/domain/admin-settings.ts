@@ -1,23 +1,30 @@
-export type CalendarProviderId = "none" | "google" | "outlook";
+/**
+ * External calendar mode. Bookings always go to both Google and Outlook when
+ * enabled; "none" is the explicit local-only mode for development and tests.
+ * Legacy stored values ("google" / "outlook") normalize to "both" because the
+ * clinic requirement is to write to both calendars.
+ */
+export type CalendarProviderId = "none" | "both";
 export type MappingProviderId = "google" | "outlook";
 export type DentistId = "junior" | "senior-1" | "senior-2";
 
 export const DENTIST_IDS: readonly DentistId[] = ["junior", "senior-1", "senior-2"];
+export const MAPPING_PROVIDERS: readonly MappingProviderId[] = ["google", "outlook"];
 
 export type SecretMetadataView = { isConfigured: boolean; updatedAt?: string };
 
+/** Both provider calendars a dentist's bookings are written to. */
 export type AdminDentistMapping = {
   dentistId: DentistId;
-  provider: MappingProviderId;
-  calendarId: string;
-  isActive: boolean;
+  googleCalendarId: string;
+  outlookCalendarId: string;
 };
 
 /** The editable shape a mapping takes while it is being changed on screen. */
 export type CalendarMappingDraft = {
   dentistId: DentistId;
-  provider: MappingProviderId;
-  calendarId: string;
+  googleCalendarId: string;
+  outlookCalendarId: string;
 };
 
 export type AiSettings = { baseUrl: string; model: string };
@@ -68,8 +75,8 @@ export type AdminSettingsUpdate = {
   calendarProvider: CalendarProviderId;
   dentistMappings: Array<{
     dentistId: DentistId;
-    provider: MappingProviderId;
-    calendarId: string;
+    googleCalendarId: string;
+    outlookCalendarId: string;
   }>;
   ai?: AiSettings;
   secrets?: Record<string, string>;
@@ -147,9 +154,8 @@ export const SECRET_GROUPS: SecretGroupDef[] = [
 export const CALENDAR_PROVIDER_SETTING = "CALENDAR_PROVIDER";
 
 export const CALENDAR_PROVIDER_LABELS: Record<CalendarProviderId, string> = {
+  both: "Google Calendar + Outlook",
   none: "None (external calendar disabled)",
-  google: "Google Calendar",
-  outlook: "Outlook / Microsoft Graph",
 };
 
 /** Display names for the fixed dentist ids, shared by every admin section. */

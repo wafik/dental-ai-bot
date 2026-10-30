@@ -113,10 +113,20 @@ Configure your API keys as needed (mock adapters run out-of-the-box for offline 
 ```env
 OPENAI_API_KEY="sk-proj-your-openai-api-key"
 CLINIC_TIMEZONE="Asia/Jakarta"
-CALENDAR_PROVIDER="google" # or "outlook"
+CALENDAR_PROVIDER="both" # or "none" for local-only mode
 KOKORO_TTS_BASE_URL="http://localhost:8880/v1"
 KOKORO_TTS_VOICE="af_heart"
 ```
+
+Every booking is written to **both** Google Calendar and Outlook. Calendar resolution is
+fail-closed: with `CALENDAR_PROVIDER="both"` (the default), a missing provider credential block or a
+missing per-dentist calendar ID makes the app throw instead of silently skipping a calendar. Use
+`CALENDAR_PROVIDER="none"` only for local development without external calendars.
+
+If a provider write fails, the appointment stays `pending`, its slot stays blocked, and the
+per-provider work is recorded for retry. Point an external scheduler at
+`POST /api/v1/admin/reconcile-calendar` with the `CALENDAR_RECONCILE_TOKEN` bearer token to drain
+retries with backoff; see [docs/CALENDAR_SETUP.md](docs/CALENDAR_SETUP.md#6-retrying-failed-writes).
 
 Text chat reads new assistant replies aloud by default. Patients can turn **Auto-read** off in the
 chat header or use a reply's **Read aloud** button. Text-to-speech uses a separately deployed

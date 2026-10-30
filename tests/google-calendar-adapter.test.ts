@@ -313,6 +313,146 @@ describe("GoogleCalendarAdapter", () => {
         expect(providerError.status).toBe(403);
       }
     });
+
+    it("uses the idempotency key as the event id and PUTs so a retry cannot duplicate", async () => {
+      let capturedUrl = "";
+      let capturedMethod = "";
+
+      const mockFetch = createMockFetch({
+        apiHandler: async (req) => {
+          capturedUrl = req.url;
+          capturedMethod = req.method;
+          await req.json();
+
+          return new Response(
+            JSON.stringify({
+              id: "abcdef0123456789abcdef0123456789",
+              start: { dateTime: "2026-10-25T10:00:00Z" },
+              end: { dateTime: "2026-10-25T11:00:00Z" },
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          );
+        },
+      });
+
+      const adapter = new GoogleCalendarAdapter(dummyConfig, mockFetch as unknown as typeof fetch);
+      const created = await adapter.createEvent({
+        dentistId: "junior",
+        summary: "Checkup",
+        description: "Routine check",
+        start: "2026-10-25T10:00:00Z",
+        end: "2026-10-25T11:00:00Z",
+        idempotencyKey: "abcdef0123456789abcdef0123456789",
+      });
+
+      const encodedCalendarId = encodeURIComponent("junior-calendar@group.calendar.google.com");
+      expect(capturedMethod).toBe("PUT");
+      expect(capturedUrl).toBe(
+        `https://www.googleapis.com/calendar/v3/calendars/${encodedCalendarId}/events/abcdef0123456789abcdef0123456789`,
+      );
+      expect(created.id).toBe("abcdef0123456789abcdef0123456789");
+    });
+
+    it("ignores an idempotency key that is not a legal Google event id", async () => {
+      let capturedUrl = "";
+      let capturedMethod = "";
+
+      const mockFetch = createMockFetch({
+        apiHandler: async (req) => {
+          capturedUrl = req.url;
+          capturedMethod = req.method;
+          return new Response(JSON.stringify({ id: "server-assigned" }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          });
+        },
+      });
+
+      const adapter = new GoogleCalendarAdapter(dummyConfig, mockFetch as unknown as typeof fetch);
+      const created = await adapter.createEvent({
+        dentistId: "junior",
+        summary: "Checkup",
+        description: "Routine check",
+        start: "2026-10-25T10:00:00Z",
+        end: "2026-10-25T11:00:00Z",
+        idempotencyKey: "not a valid id!",
+      });
+
+      const encodedCalendarId = encodeURIComponent("junior-calendar@group.calendar.google.com");
+      expect(capturedMethod).toBe("POST");
+      expect(capturedUrl).toBe(
+        `https://www.googleapis.com/calendar/v3/calendars/${encodedCalendarId}/events`,
+      );
+      expect(created.id).toBe("server-assigned");
+    });
+  });
+
+  describe("deleteEvent", () => {
+    it("deletes the encoded event and resolves", async () => {
+      let capturedUrl = "";
+      let capturedMethod = "";
+
+      const mockFetch = createMockFetch({
+        apiHandler: async (req) => {
+          capturedUrl = req.url;
+          capturedMethod = req.method;
+          return new Response(null, { status: 204 });
+        },
+      });
+
+      const adapter = new GoogleCalendarAdapter(dummyConfig, mockFetch as unknown as typeof fetch);
+      await adapter.deleteEvent({ dentistId: "junior", eventId: "evt/with slash" });
+
+      const encodedCalendarId = encodeURIComponent("junior-calendar@group.calendar.google.com");
+      expect(capturedMethod).toBe("DELETE");
+      expect(capturedUrl).toBe(
+        `https://www.googleapis.com/calendar/v3/calendars/${encodedCalendarId}/events/${encodeURIComponent("evt/with slash")}`,
+      );
+    });
+
+    it.each([404, 410])("treats HTTP %i as an already-deleted success", async (status) => {
+      const mockFetch = createMockFetch({
+        apiHandler: async () => new Response("Gone", { status }),
+      });
+
+      const adapter = new GoogleCalendarAdapter(dummyConfig, mockFetch as unknown as typeof fetch);
+      await expect(
+        adapter.deleteEvent({ dentistId: "junior", eventId: "missing" }),
+      ).resolves.toBeUndefined();
+    });
+
+    it("throws a redacted CalendarProviderError on other failures", async () => {
+      const mockFetch = createMockFetch({
+        apiHandler: async () => new Response("denied: raw body detail", { status: 403 }),
+      });
+
+      const adapter = new GoogleCalendarAdapter(dummyConfig, mockFetch as unknown as typeof fetch);
+
+      try {
+        await adapter.deleteEvent({ dentistId: "junior", eventId: "evt-1" });
+        expect.unreachable("should have thrown");
+      } catch (err: unknown) {
+        expect(err).toBeInstanceOf(CalendarProviderError);
+        const providerError = err as CalendarProviderError;
+        expect(providerError.provider).toBe("google");
+        expect(providerError.operation).toBe("deleteEvent");
+        expect(providerError.status).toBe(403);
+        expect(providerError.message).not.toContain("raw body detail");
+      }
+    });
+
+    it("throws before any HTTP call when the dentist has no mapping", async () => {
+      const mockFetch = createMockFetch({
+        apiHandler: async () => new Response(null, { status: 204 }),
+      });
+
+      const adapter = new GoogleCalendarAdapter(dummyConfig, mockFetch as unknown as typeof fetch);
+
+      await expect(
+        adapter.deleteEvent({ dentistId: "unknown", eventId: "evt-1" }),
+      ).rejects.toBeInstanceOf(CalendarProviderError);
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
   });
 
   describe("Service-account auth", () => {

@@ -1,4 +1,5 @@
 import type { AppointmentRecord, AppointmentStatus } from "../domain/appointment";
+import type { AppointmentCalendarSync, CalendarSyncPatch } from "../domain/calendar-sync";
 
 /**
  * Filter criteria for querying appointments.
@@ -21,16 +22,16 @@ export type AppointmentRepository = {
 
   /**
    * Atomically reserves a `pending` appointment if it does not overlap an active
-   * (`pending` or `confirmed`) appointment for the same dentist and date.
-   * Throws `SlotUnavailableError` when the interval is taken.
+   * appointment for the same dentist and date. Throws `SlotUnavailableError`
+   * when the interval is taken.
    */
   reserveIfAvailable(record: AppointmentRecord): Promise<AppointmentRecord>;
 
   /**
-   * Marks a reserved appointment as `confirmed` and stores its calendar event ID.
+   * Marks a reserved appointment as `confirmed`.
    * Throws `AppointmentNotFoundError` when the appointment does not exist.
    */
-  confirm(id: string, calendarEventId?: string): Promise<AppointmentRecord>;
+  confirm(id: string): Promise<AppointmentRecord>;
 
   /**
    * Finds an appointment record by its unique ID.
@@ -50,4 +51,34 @@ export type AppointmentRepository = {
     status: AppointmentStatus,
     cancelledAt?: string,
   ): Promise<AppointmentRecord>;
+
+  /**
+   * Upserts per-provider synchronization rows for one appointment. Used to
+   * persist sync intent before any remote write.
+   */
+  saveCalendarSyncs(syncs: readonly AppointmentCalendarSync[]): Promise<void>;
+
+  /**
+   * Loads the synchronization rows for one appointment.
+   */
+  getCalendarSyncs(appointmentId: string): Promise<AppointmentCalendarSync[]>;
+
+  /**
+   * Applies a partial update to one provider's synchronization row.
+   */
+  updateCalendarSync(
+    appointmentId: string,
+    provider: string,
+    patch: CalendarSyncPatch,
+  ): Promise<AppointmentCalendarSync>;
+
+  /**
+   * Atomically claims up to `limit` due rows by pushing their retry time out
+   * to `leaseUntil`. Concurrent callers only ever claim a row once.
+   */
+  claimCalendarSyncs(
+    limit: number,
+    now: string,
+    leaseUntil: string,
+  ): Promise<AppointmentCalendarSync[]>;
 };

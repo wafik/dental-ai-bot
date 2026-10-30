@@ -14,10 +14,10 @@ function makeDeps(env: Record<string, string | undefined> = {}) {
 }
 
 describe("readAdminSettings", () => {
-  it("defaults to provider none and exposes three editable mapping rows", async () => {
+  it("defaults to both providers and exposes three editable mapping rows", async () => {
     const settings = await readAdminSettings(makeDeps());
 
-    expect(settings.calendarProvider).toBe("none");
+    expect(settings.calendarProvider).toBe("both");
     expect(settings.dentistMappings).toHaveLength(3);
     expect(settings.dentistMappings.map((row) => row.dentistId)).toEqual([
       "junior",
@@ -25,15 +25,30 @@ describe("readAdminSettings", () => {
       "senior-2",
     ]);
     for (const row of settings.dentistMappings) {
-      expect(row.calendarId).toBe("");
-      expect(row.provider).toBe("google");
-      expect(row.isActive).toBe(true);
+      expect(row.googleCalendarId).toBe("");
+      expect(row.outlookCalendarId).toBe("");
     }
   });
 
-  it("coerces an unknown persisted provider to none", async () => {
+  it("coerces an unknown persisted provider to both", async () => {
     const deps = makeDeps();
     await deps.settingsRepository.setSetting(CALENDAR_PROVIDER_SETTING, "outllok");
+
+    const settings = await readAdminSettings(deps);
+    expect(settings.calendarProvider).toBe("both");
+  });
+
+  it("normalizes the legacy single-provider setting to both", async () => {
+    const deps = makeDeps();
+    await deps.settingsRepository.setSetting(CALENDAR_PROVIDER_SETTING, "google");
+
+    const settings = await readAdminSettings(deps);
+    expect(settings.calendarProvider).toBe("both");
+  });
+
+  it("keeps an explicit none setting", async () => {
+    const deps = makeDeps();
+    await deps.settingsRepository.setSetting(CALENDAR_PROVIDER_SETTING, "none");
 
     const settings = await readAdminSettings(deps);
     expect(settings.calendarProvider).toBe("none");
@@ -46,7 +61,7 @@ describe("readAdminSettings", () => {
     expect(settings.secrets["microsoft.refreshToken"]).toEqual({ isConfigured: false });
   });
 
-  it("returns only supported provider mappings with all three dentists present", async () => {
+  it("returns both provider calendar IDs per dentist and only active mappings", async () => {
     const deps = makeDeps();
     await deps.settingsRepository.setSetting(CALENDAR_PROVIDER_SETTING, "outlook");
     await deps.settingsRepository.upsertDentistCalendarMapping({
@@ -54,13 +69,18 @@ describe("readAdminSettings", () => {
       provider: "outlook",
       calendarId: "outlook-junior",
     });
+    await deps.settingsRepository.upsertDentistCalendarMapping({
+      dentistId: "junior",
+      provider: "google",
+      calendarId: "google-junior",
+    });
 
     const settings = await readAdminSettings(deps);
-    expect(settings.calendarProvider).toBe("outlook");
+    expect(settings.calendarProvider).toBe("both");
     expect(settings.dentistMappings[0]).toMatchObject({
       dentistId: "junior",
-      provider: "outlook",
-      calendarId: "outlook-junior",
+      googleCalendarId: "google-junior",
+      outlookCalendarId: "outlook-junior",
     });
     expect(settings.dentistMappings).toHaveLength(3);
   });
@@ -89,22 +109,32 @@ describe("readAdminSettings", () => {
 });
 
 describe("updateAdminSettings", () => {
-  it("persists the provider and mapping rows, then returns the refreshed view", async () => {
+  it("persists the provider and both mappings per dentist, then returns the refreshed view", async () => {
     const deps = makeDeps();
 
     const result = await updateAdminSettings(deps, {
-      calendarProvider: "google",
+      calendarProvider: "both",
       dentistMappings: [
-        { dentistId: "junior", provider: "google", calendarId: "cal-junior" },
-        { dentistId: "senior-1", provider: "google", calendarId: "cal-senior-1" },
+        {
+          dentistId: "junior",
+          googleCalendarId: "g-junior",
+          outlookCalendarId: "o-junior",
+        },
+        {
+          dentistId: "senior-1",
+          googleCalendarId: "g-senior-1",
+          outlookCalendarId: "",
+        },
       ],
     });
 
-    expect(await deps.settingsRepository.getSetting(CALENDAR_PROVIDER_SETTING)).toBe("google");
-    expect(result.calendarProvider).toBe("google");
-    expect(result.dentistMappings[0]!.calendarId).toBe("cal-junior");
-    expect(result.dentistMappings[1]!.calendarId).toBe("cal-senior-1");
-    expect(result.dentistMappings[2]!.calendarId).toBe("");
+    expect(await deps.settingsRepository.getSetting(CALENDAR_PROVIDER_SETTING)).toBe("both");
+    expect(result.calendarProvider).toBe("both");
+    expect(result.dentistMappings[0]!.googleCalendarId).toBe("g-junior");
+    expect(result.dentistMappings[0]!.outlookCalendarId).toBe("o-junior");
+    expect(result.dentistMappings[1]!.googleCalendarId).toBe("g-senior-1");
+    expect(result.dentistMappings[1]!.outlookCalendarId).toBe("");
+    expect(result.dentistMappings[2]!.googleCalendarId).toBe("");
   });
 
   it("persists the AI endpoint and echoes it back", async () => {

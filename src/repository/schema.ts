@@ -1,4 +1,13 @@
-import { boolean, index, pgTable, text, timestamp, varchar } from "drizzle-orm/pg-core";
+import {
+  boolean,
+  index,
+  integer,
+  pgTable,
+  primaryKey,
+  text,
+  timestamp,
+  varchar,
+} from "drizzle-orm/pg-core";
 
 /**
  * PostgreSQL appointments table schema defined via Drizzle ORM.
@@ -15,7 +24,6 @@ export const appointments = pgTable(
     startTime: varchar("start_time", { length: 5 }).notNull(),
     endTime: varchar("end_time", { length: 5 }).notNull(),
     status: varchar("status", { length: 16 }).notNull().default("confirmed"),
-    calendarEventId: text("calendar_event_id"),
     createdAt: timestamp("created_at", { withTimezone: true, mode: "string" })
       .notNull()
       .defaultNow(),
@@ -31,6 +39,39 @@ export const appointments = pgTable(
 
 export type AppointmentRow = typeof appointments.$inferSelect;
 export type InsertAppointmentRow = typeof appointments.$inferInsert;
+
+/**
+ * Per-provider calendar synchronization state for each appointment. One row per
+ * appointment and provider tracks the latest operation (book or cancel) so an
+ * appointment is confirmed or cancelled only after every calendar converges.
+ */
+export const appointmentCalendarSyncs = pgTable(
+  "appointment_calendar_syncs",
+  {
+    appointmentId: varchar("appointment_id", { length: 36 })
+      .notNull()
+      .references(() => appointments.id, { onDelete: "cascade" }),
+    provider: varchar("provider", { length: 16 }).notNull(),
+    operation: varchar("operation", { length: 16 }).notNull().default("book"),
+    status: varchar("status", { length: 24 }).notNull().default("pending"),
+    eventId: text("event_id"),
+    attempts: integer("attempts").notNull().default(0),
+    nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true, mode: "string" })
+      .notNull()
+      .defaultNow(),
+    lastError: varchar("last_error", { length: 64 }),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.appointmentId, table.provider] }),
+    index("appointment_calendar_syncs_due_idx").on(table.status, table.nextAttemptAt),
+  ],
+);
+
+export type AppointmentCalendarSyncRow = typeof appointmentCalendarSyncs.$inferSelect;
+export type InsertAppointmentCalendarSyncRow = typeof appointmentCalendarSyncs.$inferInsert;
 
 /**
  * PostgreSQL clinic dynamic configuration settings table.

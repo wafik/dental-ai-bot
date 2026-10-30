@@ -1,5 +1,4 @@
-import type { CalendarProvider } from "./calendar-provider";
-import { NoopCalendarProvider } from "./noop-calendar-provider";
+import type { CalendarProviderSet } from "./calendar-provider";
 import { GoogleCalendarAdapter } from "./google-calendar-adapter";
 import { OutlookCalendarAdapter } from "./outlook-calendar-adapter";
 import type { SettingsRepository } from "../../repository/settings-repository";
@@ -55,107 +54,166 @@ async function resolveCredentialEnv(
   return resolvedEnv;
 }
 
+type BuildResult =
+  | { provider: GoogleCalendarAdapter | OutlookCalendarAdapter }
+  | { missing: string[] };
+
+function hasCompleteMappings(mapping: DentistCalendarMapping): boolean {
+  return Boolean(mapping.junior && mapping["senior-1"] && mapping["senior-2"]);
+}
+
+async function buildGoogleProvider(
+  env: Record<string, string | undefined>,
+  secretRepository: SecretRepository | undefined,
+  settingsRepo: SettingsRepository | undefined,
+): Promise<BuildResult> {
+  const resolvedEnv = await resolveCredentialEnv(env, secretRepository, GOOGLE_CREDENTIAL_KEYS);
+  const calendarIds = await resolveDentistMappings("google", settingsRepo, {
+    junior: resolvedEnv.GOOGLE_CALENDAR_JUNIOR?.trim() ?? "",
+    "senior-1": resolvedEnv.GOOGLE_CALENDAR_SENIOR_1?.trim() ?? "",
+    "senior-2": resolvedEnv.GOOGLE_CALENDAR_SENIOR_2?.trim() ?? "",
+  });
+
+  const serviceAccountEmail = resolvedEnv.GOOGLE_SERVICE_ACCOUNT_EMAIL?.trim();
+  const privateKey = resolvedEnv.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY?.trim();
+  const clientId = resolvedEnv.GOOGLE_CLIENT_ID?.trim();
+  const clientSecret = resolvedEnv.GOOGLE_CLIENT_SECRET?.trim();
+  const refreshToken = resolvedEnv.GOOGLE_REFRESH_TOKEN?.trim();
+
+  const missing: string[] = [];
+  if (!hasCompleteMappings(calendarIds)) {
+    missing.push("Google dentist calendar IDs");
+  }
+  const hasServiceAccount = Boolean(serviceAccountEmail && privateKey);
+  const hasDelegatedOAuth = Boolean(clientId && clientSecret && refreshToken);
+  if (!hasServiceAccount && !hasDelegatedOAuth) {
+    missing.push("Google credentials");
+  }
+
+  if (missing.length > 0) {
+    return { missing };
+  }
+
+  // Service-account auth wins when configured; it needs no refresh token.
+  if (hasServiceAccount) {
+    return {
+      provider: new GoogleCalendarAdapter({
+        serviceAccountEmail,
+        // Stored secrets keep real newlines; env values are usually escaped.
+        privateKey: privateKey!.replace(/\\n/g, "\n"),
+        calendarIds,
+      }),
+    };
+  }
+
+  return {
+    provider: new GoogleCalendarAdapter({
+      clientId,
+      clientSecret,
+      refreshToken,
+      calendarIds,
+    }),
+  };
+}
+
+async function buildOutlookProvider(
+  env: Record<string, string | undefined>,
+  secretRepository: SecretRepository | undefined,
+  settingsRepo: SettingsRepository | undefined,
+): Promise<BuildResult> {
+  const resolvedEnv = await resolveCredentialEnv(env, secretRepository, MICROSOFT_CREDENTIAL_KEYS);
+
+  const tenantId = resolvedEnv.MICROSOFT_TENANT_ID?.trim();
+  const clientId = resolvedEnv.MICROSOFT_CLIENT_ID?.trim();
+  const clientSecret = resolvedEnv.MICROSOFT_CLIENT_SECRET?.trim();
+  const refreshToken = resolvedEnv.MICROSOFT_REFRESH_TOKEN?.trim();
+
+  const calendarIds = await resolveDentistMappings("outlook", settingsRepo, {
+    junior: resolvedEnv.MICROSOFT_CALENDAR_JUNIOR?.trim() ?? "",
+    "senior-1": resolvedEnv.MICROSOFT_CALENDAR_SENIOR_1?.trim() ?? "",
+    "senior-2": resolvedEnv.MICROSOFT_CALENDAR_SENIOR_2?.trim() ?? "",
+  });
+
+  const missing: string[] = [];
+  if (!tenantId || !clientId || !clientSecret || !refreshToken) {
+    missing.push("Outlook credentials");
+  }
+  if (!hasCompleteMappings(calendarIds)) {
+    missing.push("Outlook dentist calendar IDs");
+  }
+
+  if (missing.length > 0) {
+    return { missing };
+  }
+
+  return {
+    provider: new OutlookCalendarAdapter({
+      tenantId: tenantId!,
+      clientId: clientId!,
+      clientSecret: clientSecret!,
+      refreshToken: refreshToken!,
+      calendarIds,
+    }),
+  };
+}
+
 /**
- * Resolves and instantiates the active CalendarProvider.
- * Dynamically resolves dentist calendar IDs from the database (SettingsRepository)
- * with graceful fallback to environment variables.
+ * Resolves the configured Google and Outlook providers.
  *
- * Credentials are resolved per field from the encrypted secret store first, then
- * the matching environment variable, so admin changes take effect without a
- * process restart.
+ * The clinic requirement is that bookings reach both calendars, so the factory
+ * is fail-closed: absent configuration is an error, not a silent local-only
+ * success. The only local-only mode is the explicit `CALENDAR_PROVIDER=none`
+ * setting used by local development and automated tests.
+ *
+ * Credentials resolve per field from the encrypted secret store first, then the
+ * matching environment variable, so admin changes apply without a restart.
  */
 export async function resolveCalendarProvider(
   options: CalendarFactoryOptions = {},
-): Promise<CalendarProvider> {
+): Promise<CalendarProviderSet> {
   const env = options.env ?? process.env;
   const settingsRepo = options.settingsRepository;
   const secretRepo = options.secretRepository;
 
-  // 1. Determine active provider ("google", "outlook", or none)
-  let activeProvider = env.CALENDAR_PROVIDER?.toLowerCase().trim();
+  // An explicit "none" disables external calendars. Anything else, including
+  // an absent setting, requires both providers so missing configuration can
+  // never masquerade as a successful synchronization.
+  let activeProvider = env.CALENDAR_PROVIDER?.trim().toLowerCase() ?? "";
   if (settingsRepo) {
-    const dbProvider = await settingsRepo.getSetting(CALENDAR_PROVIDER_SETTING);
+    const dbProvider = (await settingsRepo.getSetting(CALENDAR_PROVIDER_SETTING))
+      ?.trim()
+      .toLowerCase();
     if (dbProvider) {
-      activeProvider = dbProvider.toLowerCase().trim();
+      activeProvider = dbProvider;
     }
   }
 
-  if (activeProvider === "google") {
-    const resolvedEnv = await resolveCredentialEnv(env, secretRepo, GOOGLE_CREDENTIAL_KEYS);
-
-    // Resolve dentist calendar IDs from DB with env fallback
-    const calendarIds = await resolveDentistMappings("google", settingsRepo, {
-      junior: resolvedEnv.GOOGLE_CALENDAR_JUNIOR?.trim() ?? "",
-      "senior-1": resolvedEnv.GOOGLE_CALENDAR_SENIOR_1?.trim() ?? "",
-      "senior-2": resolvedEnv.GOOGLE_CALENDAR_SENIOR_2?.trim() ?? "",
-    });
-
-    if (!calendarIds.junior || !calendarIds["senior-1"] || !calendarIds["senior-2"]) {
-      return new NoopCalendarProvider();
-    }
-
-    const serviceAccountEmail = resolvedEnv.GOOGLE_SERVICE_ACCOUNT_EMAIL?.trim();
-    const privateKey = resolvedEnv.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY?.trim();
-
-    // Service-account auth wins when configured; it needs no refresh token.
-    if (serviceAccountEmail && privateKey) {
-      return new GoogleCalendarAdapter({
-        serviceAccountEmail,
-        // Stored secrets keep real newlines; env values are usually escaped.
-        privateKey: privateKey.replace(/\\n/g, "\n"),
-        calendarIds,
-      });
-    }
-
-    const clientId = resolvedEnv.GOOGLE_CLIENT_ID?.trim();
-    const clientSecret = resolvedEnv.GOOGLE_CLIENT_SECRET?.trim();
-    const refreshToken = resolvedEnv.GOOGLE_REFRESH_TOKEN?.trim();
-
-    if (!clientId || !clientSecret || !refreshToken) {
-      return new NoopCalendarProvider();
-    }
-
-    return new GoogleCalendarAdapter({
-      clientId,
-      clientSecret,
-      refreshToken,
-      calendarIds,
-    });
+  if (activeProvider === "none") {
+    return {};
   }
 
-  if (activeProvider === "outlook") {
-    const resolvedEnv = await resolveCredentialEnv(env, secretRepo, MICROSOFT_CREDENTIAL_KEYS);
+  const google = await buildGoogleProvider(env, secretRepo, settingsRepo);
+  const outlook = await buildOutlookProvider(env, secretRepo, settingsRepo);
 
-    const tenantId = resolvedEnv.MICROSOFT_TENANT_ID?.trim();
-    const clientId = resolvedEnv.MICROSOFT_CLIENT_ID?.trim();
-    const clientSecret = resolvedEnv.MICROSOFT_CLIENT_SECRET?.trim();
-    const refreshToken = resolvedEnv.MICROSOFT_REFRESH_TOKEN?.trim();
+  const missing = [
+    ...("missing" in google ? google.missing : []),
+    ...("missing" in outlook ? outlook.missing : []),
+  ];
 
-    if (!tenantId || !clientId || !clientSecret || !refreshToken) {
-      return new NoopCalendarProvider();
-    }
-
-    // Resolve dentist calendar IDs from DB with env fallback
-    const calendarIds = await resolveDentistMappings("outlook", settingsRepo, {
-      junior: resolvedEnv.MICROSOFT_CALENDAR_JUNIOR?.trim() ?? "",
-      "senior-1": resolvedEnv.MICROSOFT_CALENDAR_SENIOR_1?.trim() ?? "",
-      "senior-2": resolvedEnv.MICROSOFT_CALENDAR_SENIOR_2?.trim() ?? "",
-    });
-
-    if (!calendarIds.junior || !calendarIds["senior-1"] || !calendarIds["senior-2"]) {
-      return new NoopCalendarProvider();
-    }
-
-    return new OutlookCalendarAdapter({
-      tenantId,
-      clientId,
-      clientSecret,
-      refreshToken,
-      calendarIds,
-    });
+  if (missing.length > 0) {
+    throw new Error(
+      `Both Google Calendar and Outlook must be configured. Missing: ${missing.join("; ")}.`,
+    );
   }
 
-  return new NoopCalendarProvider();
+  const providers: CalendarProviderSet = {};
+  if ("provider" in google) {
+    providers.google = google.provider;
+  }
+  if ("provider" in outlook) {
+    providers.outlook = outlook.provider;
+  }
+  return providers;
 }
 
 async function resolveDentistMappings(

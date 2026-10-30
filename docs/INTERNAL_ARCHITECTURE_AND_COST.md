@@ -99,8 +99,8 @@ flowchart TB
 * **Decision:** Design a unified `CalendarProvider` interface with RFC3339 UTC normalization (`YYYY-MM-DDTHH:mm:ssZ`).
 * **Why:** Clinics run heterogeneous software stacks. Private practices commonly use Google Workspace, whereas hospital-affiliated clinics standardize on Microsoft 365 / Entra ID.
 * **Implementation Highlights:**
-  * **Google Calendar:** Uses OAuth 2.0 refresh token rotation, in-memory bearer token caching with proactive refresh (5 minutes prior to expiration), and Freebusy API queries (`calendar.freebusy.query`).
-  * **Microsoft Outlook:** Connects to Microsoft Graph `/v1.0/users/{dentist}/calendarView`, handles multi-page `@odata.nextLink` pagination, and converts Microsoft's un-suffixed UTC strings into canonical ISO strings.
+  * **Google Calendar:** Uses OAuth 2.0 refresh token rotation, in-memory bearer token caching with proactive refresh (60 seconds before expiration), and Freebusy API queries (`calendar.freebusy.query`).
+  * **Microsoft Outlook:** Connects to Microsoft Graph `/v1.0/me/calendars/{calendarId}/calendarView` for the configured clinic account, handles multi-page `@odata.nextLink` pagination, and converts Microsoft's un-suffixed UTC strings into canonical ISO strings.
 * **Failure Isolation:** Errors from calendar APIs are wrapped in a redacted `CalendarProviderError`, preventing raw stack traces or leaked tokens from reaching application logs.
 
 ### 2.3 Authoritative Server-Side Validation
@@ -228,4 +228,4 @@ In production enterprise deployments, configuration and credentials are bifurcat
 1. **Race Conditions & Double-Booking:** When two patients request the same dentist and time slot simultaneously:
    * Booking runs inside a PostgreSQL transaction that acquires a transaction-scoped advisory lock keyed by `(dentist_id, date)`, re-checks interval overlap against `pending` and `confirmed` rows, then inserts a `pending` reservation.
    * Only one transaction reserves the slot; the second receives `SlotUnavailableError` and the assistant immediately offers the next nearest available slot.
-2. **Calendar Provider Downtime:** If Google or Outlook fails after a reservation is made, the reservation is marked `failed` so it stops blocking availability, and the caller receives a safe retry error. Because PostgreSQL and the calendar provider cannot share a transaction, a process crash between reservation and confirmation leaves a visible `pending` row for operational reconciliation rather than risking a double booking.
+2. **Calendar Provider Downtime:** A provider failure never produces a false success. The appointment stays `pending` (booking) or `cancelling` (cancellation) and keeps its slot blocked, while one `appointment_calendar_syncs` row per provider records its own status, attempt count, and next retry time. Google creates are retried safely because the event ID is caller-supplied and `PUT`-upserted; an ambiguous Microsoft Graph create is flagged `needs_manual_reconciliation` instead of being retried blindly. Deletes are idempotent at both providers. Retries run through `POST /api/v1/admin/reconcile-calendar`, which claims due rows with a lease so overlapping scheduler runs cannot process the same row twice. Because PostgreSQL and the calendar provider cannot share a transaction, the guarantee is durable eventual convergence, not distributed atomicity.

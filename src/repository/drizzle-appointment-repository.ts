@@ -7,12 +7,24 @@ import {
   type AppointmentStatus,
 } from "../domain/appointment";
 import type { DentalService } from "../domain/clinic";
+import type {
+  AppointmentCalendarSync,
+  CalendarSyncOperation,
+  CalendarSyncPatch,
+  CalendarSyncStatus,
+} from "../domain/calendar-sync";
+import type { CalendarProviderName } from "../providers/calendar/calendar-provider";
 import type { AppointmentFilter, AppointmentRepository } from "./appointment-repository";
 import { getDb } from "./db";
-import { appointments, type AppointmentRow } from "./schema";
+import {
+  appointmentCalendarSyncs,
+  appointments,
+  type AppointmentCalendarSyncRow,
+  type AppointmentRow,
+} from "./schema";
 
 /** Statuses that occupy a dentist's time and must block overlapping reservations. */
-const ACTIVE_STATUSES: AppointmentStatus[] = ["pending", "confirmed"];
+const ACTIVE_STATUSES: AppointmentStatus[] = ["pending", "confirmed", "cancelling"];
 
 /**
  * PostgreSQL appointment repository implementation backed by Drizzle ORM.
@@ -35,7 +47,6 @@ export class DrizzleAppointmentRepository implements AppointmentRepository {
       startTime: record.startTime,
       endTime: record.endTime,
       status: record.status,
-      calendarEventId: record.calendarEventId ?? null,
       createdAt: record.createdAt,
       updatedAt: record.updatedAt,
       cancelledAt: record.cancelledAt ?? null,
@@ -86,7 +97,6 @@ export class DrizzleAppointmentRepository implements AppointmentRepository {
         startTime: record.startTime,
         endTime: record.endTime,
         status: "pending",
-        calendarEventId: null,
         createdAt: record.createdAt,
         updatedAt: record.updatedAt,
         cancelledAt: null,
@@ -96,15 +106,11 @@ export class DrizzleAppointmentRepository implements AppointmentRepository {
     return { ...record, status: "pending" };
   }
 
-  async confirm(id: string, calendarEventId?: string): Promise<AppointmentRecord> {
+  async confirm(id: string): Promise<AppointmentRecord> {
     const now = new Date().toISOString();
     const updatedRows = await this.db
       .update(appointments)
-      .set({
-        status: "confirmed",
-        updatedAt: now,
-        ...(calendarEventId !== undefined ? { calendarEventId } : {}),
-      })
+      .set({ status: "confirmed", updatedAt: now })
       .where(eq(appointments.id, id))
       .returning();
 
@@ -187,6 +193,96 @@ export class DrizzleAppointmentRepository implements AppointmentRepository {
     return this.toRecord(updatedRows[0]!);
   }
 
+  async saveCalendarSyncs(syncs: readonly AppointmentCalendarSync[]): Promise<void> {
+    if (syncs.length === 0) {
+      return;
+    }
+
+    for (const sync of syncs) {
+      await this.db
+        .insert(appointmentCalendarSyncs)
+        .values({
+          appointmentId: sync.appointmentId,
+          provider: sync.provider,
+          operation: sync.operation,
+          status: sync.status,
+          eventId: sync.eventId ?? null,
+          attempts: sync.attempts,
+          nextAttemptAt: sync.nextAttemptAt,
+          lastError: sync.lastError ?? null,
+          updatedAt: sync.updatedAt,
+        })
+        .onConflictDoNothing();
+    }
+  }
+
+  async getCalendarSyncs(appointmentId: string): Promise<AppointmentCalendarSync[]> {
+    const rows = await this.db
+      .select()
+      .from(appointmentCalendarSyncs)
+      .where(eq(appointmentCalendarSyncs.appointmentId, appointmentId));
+
+    return rows.map((row) => this.toSync(row));
+  }
+
+  async updateCalendarSync(
+    appointmentId: string,
+    provider: string,
+    patch: CalendarSyncPatch,
+  ): Promise<AppointmentCalendarSync> {
+    const now = new Date().toISOString();
+    const updatedRows = await this.db
+      .update(appointmentCalendarSyncs)
+      .set({
+        updatedAt: now,
+        ...(patch.operation !== undefined ? { operation: patch.operation } : {}),
+        ...(patch.status !== undefined ? { status: patch.status } : {}),
+        ...(patch.eventId !== undefined ? { eventId: patch.eventId } : {}),
+        ...(patch.attempts !== undefined ? { attempts: patch.attempts } : {}),
+        ...(patch.lastError !== undefined ? { lastError: patch.lastError } : {}),
+        ...(patch.nextAttemptAt !== undefined ? { nextAttemptAt: patch.nextAttemptAt } : {}),
+      })
+      .where(
+        and(
+          eq(appointmentCalendarSyncs.appointmentId, appointmentId),
+          eq(appointmentCalendarSyncs.provider, provider),
+        ),
+      )
+      .returning();
+
+    if (updatedRows.length === 0) {
+      throw new AppointmentNotFoundError(appointmentId);
+    }
+
+    return this.toSync(updatedRows[0]!);
+  }
+
+  /**
+   * Claims due rows in one statement so two workers cannot both claim them.
+   * `FOR UPDATE SKIP LOCKED` keeps the claim non-blocking under contention.
+   */
+  async claimCalendarSyncs(
+    limit: number,
+    now: string,
+    leaseUntil: string,
+  ): Promise<AppointmentCalendarSync[]> {
+    const rows = await this.db.execute(sql`
+      UPDATE appointment_calendar_syncs
+      SET next_attempt_at = ${leaseUntil}, updated_at = ${now}
+      WHERE (appointment_id, provider) IN (
+        SELECT appointment_id, provider
+        FROM appointment_calendar_syncs
+        WHERE status = 'pending' AND next_attempt_at <= ${now}
+        ORDER BY next_attempt_at
+        LIMIT ${limit}
+        FOR UPDATE SKIP LOCKED
+      )
+      RETURNING *
+    `);
+
+    return Array.from(rows as Iterable<Record<string, unknown>>).map((row) => this.toSyncRow(row));
+  }
+
   private toRecord(row: AppointmentRow): AppointmentRecord {
     return {
       id: row.id,
@@ -198,7 +294,6 @@ export class DrizzleAppointmentRepository implements AppointmentRepository {
       startTime: row.startTime,
       endTime: row.endTime,
       status: row.status as AppointmentStatus,
-      calendarEventId: row.calendarEventId ?? undefined,
       createdAt:
         typeof row.createdAt === "string" ? row.createdAt : new Date(row.createdAt).toISOString(),
       updatedAt:
@@ -210,4 +305,37 @@ export class DrizzleAppointmentRepository implements AppointmentRepository {
         : undefined,
     };
   }
+
+  private toSync(row: AppointmentCalendarSyncRow): AppointmentCalendarSync {
+    return {
+      appointmentId: row.appointmentId,
+      provider: row.provider as CalendarProviderName,
+      operation: row.operation as CalendarSyncOperation,
+      status: row.status as CalendarSyncStatus,
+      eventId: row.eventId ?? undefined,
+      attempts: row.attempts,
+      nextAttemptAt: toIso(row.nextAttemptAt),
+      lastError: row.lastError ?? undefined,
+      updatedAt: toIso(row.updatedAt),
+    };
+  }
+
+  /** Maps a raw `db.execute` row (snake_case, driver-decoded dates). */
+  private toSyncRow(row: Record<string, unknown>): AppointmentCalendarSync {
+    return {
+      appointmentId: String(row.appointment_id),
+      provider: String(row.provider) as CalendarProviderName,
+      operation: String(row.operation) as CalendarSyncOperation,
+      status: String(row.status) as CalendarSyncStatus,
+      eventId: row.event_id ? String(row.event_id) : undefined,
+      attempts: Number(row.attempts),
+      nextAttemptAt: toIso(row.next_attempt_at),
+      lastError: row.last_error ? String(row.last_error) : undefined,
+      updatedAt: toIso(row.updated_at),
+    };
+  }
+}
+
+function toIso(value: unknown): string {
+  return value instanceof Date ? value.toISOString() : String(value);
 }

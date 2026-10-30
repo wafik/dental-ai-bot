@@ -36,8 +36,11 @@ test.describe("Admin settings", () => {
     // load, which is what guarantees these edits are not overwritten.
     await expect(page.getByTestId("save-settings")).toBeEnabled();
     await page.getByRole("tab", { name: "Calendar" }).click();
-    await page.locator("#calendar-provider").selectOption("google");
-    await page.locator("#mapping-junior-calendar").fill("junior-e2e@group.calendar.google.com");
+    await page.locator("#calendar-provider").selectOption("both");
+    await page
+      .locator("#mapping-junior-googleCalendarId")
+      .fill("junior-e2e@group.calendar.google.com");
+    await page.locator("#mapping-junior-outlookCalendarId").fill("junior-e2e@outlook.example");
 
     // Draft secret + eye toggle
     await page.getByRole("tab", { name: "Credentials" }).click();
@@ -75,9 +78,12 @@ test.describe("Admin settings", () => {
     await page.reload();
     await expect(page.getByTestId("status-openai")).toContainText("Configured");
     await page.getByRole("tab", { name: "Calendar" }).click();
-    await expect(page.locator("#calendar-provider")).toHaveValue("google");
-    await expect(page.locator("#mapping-junior-calendar")).toHaveValue(
+    await expect(page.locator("#calendar-provider")).toHaveValue("both");
+    await expect(page.locator("#mapping-junior-googleCalendarId")).toHaveValue(
       "junior-e2e@group.calendar.google.com",
+    );
+    await expect(page.locator("#mapping-junior-outlookCalendarId")).toHaveValue(
+      "junior-e2e@outlook.example",
     );
     await page.getByRole("tab", { name: "Credentials" }).click();
     await expect(page.getByLabel("API Key")).toHaveValue("");

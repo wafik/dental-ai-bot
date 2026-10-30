@@ -4,16 +4,22 @@ import type { DentalService } from "./clinic";
  * Valid appointment lifecycle statuses.
  *
  * - `pending`: reserved atomically, awaiting external calendar synchronization.
- * - `confirmed`: calendar event created; visible to the public.
+ * - `confirmed`: synchronized to every configured calendar; visible to the public.
+ * - `cancelling`: cancellation requested; external calendar events are being removed.
  * - `cancelled`: cancelled by staff or patient.
- * - `failed`: calendar synchronization failed; no longer blocks availability.
+ * - `failed`: legacy sync-failure status; no longer produced, kept for stored rows.
  */
-export type AppointmentStatus = "pending" | "confirmed" | "cancelled" | "failed";
+export type AppointmentStatus = "pending" | "confirmed" | "cancelling" | "cancelled" | "failed";
 
 /**
  * Statuses that occupy a dentist's time and must block overlapping bookings.
+ * `cancelling` still blocks: the external event may not be removed yet.
  */
-export const ACTIVE_APPOINTMENT_STATUSES: readonly AppointmentStatus[] = ["pending", "confirmed"];
+export const ACTIVE_APPOINTMENT_STATUSES: readonly AppointmentStatus[] = [
+  "pending",
+  "confirmed",
+  "cancelling",
+];
 
 /**
  * Domain entity representing an appointment record in the clinic.
@@ -28,7 +34,6 @@ export type AppointmentRecord = {
   startTime: string; // HH:mm
   endTime: string; // HH:mm
   status: AppointmentStatus;
-  calendarEventId?: string;
   createdAt: string; // ISO 8601 UTC
   updatedAt: string; // ISO 8601 UTC
   cancelledAt?: string; // ISO 8601 UTC

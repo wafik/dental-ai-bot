@@ -12,6 +12,9 @@ export {
   type CalendarProviderErrorOptions,
 };
 
+/** Every external calendar the clinic synchronizes with. */
+export const CALENDAR_PROVIDER_NAMES: readonly CalendarProviderName[] = ["google", "outlook"];
+
 /**
  * A normalized busy interval with canonical UTC ISO timestamps.
  */
@@ -29,6 +32,11 @@ export type CalendarEventInput = {
   description: string;
   start: string;
   end: string;
+  /**
+   * Stable per-appointment key. Providers that support caller-supplied event
+   * IDs use it to make retries idempotent instead of creating duplicates.
+   */
+  idempotencyKey?: string;
 };
 
 /**
@@ -41,6 +49,12 @@ export type CreatedCalendarEvent = {
 };
 
 /**
+ * A configured provider set. A missing entry means that calendar is not
+ * configured; the service treats an empty set as local-only mode.
+ */
+export type CalendarProviderSet = Partial<Record<CalendarProviderName, CalendarProvider>>;
+
+/**
  * Provider-neutral contract for calendar operations.
  */
 export type CalendarProvider = {
@@ -51,6 +65,12 @@ export type CalendarProvider = {
   }): Promise<BusyInterval[]>;
 
   createEvent(input: CalendarEventInput): Promise<CreatedCalendarEvent>;
+
+  /**
+   * Deletes an event. Implementations treat an already-missing event as
+   * success so cancellation can be retried safely.
+   */
+  deleteEvent(input: { dentistId: string; eventId: string }): Promise<void>;
 };
 
 const RFC3339_REGEX =

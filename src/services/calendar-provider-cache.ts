@@ -1,4 +1,4 @@
-import type { CalendarProvider } from "../providers/calendar/calendar-provider";
+import type { CalendarProviderSet } from "../providers/calendar/calendar-provider";
 import { resolveCalendarProvider } from "../providers/calendar/calendar-factory";
 import type { SettingsRepository } from "../repository/settings-repository";
 import type { SecretRepository } from "../repository/secret-repository";
@@ -15,7 +15,7 @@ export type CalendarProviderCacheDeps = {
   env?: Record<string, string | undefined>;
 };
 
-let cachedProvider: CalendarProvider | null = null;
+let cachedProviders: CalendarProviderSet | null = null;
 let cachedFingerprint: string | null = null;
 
 /**
@@ -23,15 +23,15 @@ let cachedFingerprint: string | null = null;
  * fingerprint mechanism itself handles normal admin changes.
  */
 export function resetCalendarProviderCache(): void {
-  cachedProvider = null;
+  cachedProviders = null;
   cachedFingerprint = null;
 }
 
 /**
  * Builds a version string covering everything that can change the resolved
- * provider: the active provider setting, every mapping, and the update time of
- * every stored secret. Reusing a provider with an identical fingerprint keeps
- * its in-memory OAuth access token cache alive.
+ * providers: the active provider setting, every mapping, and the update time of
+ * every stored secret. Reusing providers with an identical fingerprint keeps
+ * their in-memory OAuth access token caches alive.
  */
 async function computeFingerprint(
   settingsRepository: SettingsRepository,
@@ -62,31 +62,31 @@ async function computeFingerprint(
 }
 
 /**
- * Returns the active calendar provider, re-resolving it only when the
+ * Returns the configured calendar providers, re-resolving them only when the
  * fingerprint of provider settings, mappings, or stored secrets changed.
  * Resolution failures are never cached, so a later request can retry.
  */
 export async function getRuntimeCalendarProvider(
   deps: CalendarProviderCacheDeps = {},
-): Promise<CalendarProvider> {
+): Promise<CalendarProviderSet> {
   const settingsRepository = deps.settingsRepository ?? getRuntimeSettingsRepository();
   const secretRepository = deps.secretRepository ?? getRuntimeSecretRepository();
   const env = deps.env ?? process.env;
 
   const fingerprint = await computeFingerprint(settingsRepository, secretRepository);
 
-  if (cachedProvider && cachedFingerprint === fingerprint) {
-    return cachedProvider;
+  if (cachedProviders && cachedFingerprint === fingerprint) {
+    return cachedProviders;
   }
 
-  const provider = await resolveCalendarProvider({
+  const providers = await resolveCalendarProvider({
     settingsRepository,
     secretRepository,
     env,
   });
 
-  cachedProvider = provider;
+  cachedProviders = providers;
   cachedFingerprint = fingerprint;
 
-  return provider;
+  return providers;
 }

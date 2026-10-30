@@ -10,7 +10,7 @@ The Dental AI Assistant is a web-based appointment assistant with conversational
 
 ### Key Business Benefits for Your Clinic:
 1. **Online appointment enquiries:** Patients can use chat or browser voice when the service and its providers are available.
-2. **Calendar-aware scheduling:** The assistant checks the configured dentist calendars and writes bookings to the selected Google Calendar or Microsoft Outlook provider. It does not update both providers simultaneously. An unconfigured calendar can fall back to a mock provider and does not sync externally; verify configuration before accepting real bookings.
+2. **Calendar-aware scheduling:** The assistant checks both Google Calendar and Microsoft Outlook for every dentist and writes each booking to **both** calendars. A slot is offered only when neither calendar shows a conflict. There is no mock fallback in a configured deployment: if a calendar credential or dentist mapping is missing, the app refuses to book rather than pretending it synced. If a provider write fails, the appointment stays `pending` and the write is retried automatically.
 3. **Smart Doctor Assignment:** 
    * Simple checkups and extractions can be assigned to your Junior Dentist.
    * Complex treatments (Root Canals, Crowns, Implants) are automatically reserved exclusively for your Senior Specialists.
@@ -79,7 +79,9 @@ If your clinic uses Microsoft 365 Outlook:
 > the eye icon reveals text you are currently typing, never the stored value. Leaving a credential
 > field empty keeps the previously saved secret unchanged.
 
-With a correctly configured provider, bookings are written to the selected calendar. Verify calendar access and synchronization before relying on it for patient appointments.
+With both calendars configured, bookings are written to Google Calendar and Outlook together, and a
+booking is only reported as confirmed once both writes succeeded. Verify calendar access for all
+three dentists before relying on the app for patient appointments.
 
 ---
 
@@ -121,10 +123,10 @@ The base URL must be reachable from the Next.js server and expose Kokoro-FastAPI
 **Answer:** No. Clinic hours are strictly enforced from **09:00 AM to 05:00 PM (09:00 - 17:00)**. The AI will never book an appointment that starts before 09:00 or ends after 17:00.
 
 #### Q3: What happens if a doctor adds an appointment directly into Google or Outlook?
-**Answer:** When the selected calendar provider is correctly configured and reachable, its busy intervals are checked before offering slots. The mock fallback cannot see external events, so it must not be relied on for real appointments.
+**Answer:** Both Google Calendar and Outlook are checked before a slot is offered: a slot is only free when neither calendar shows a conflicting event. Manual appointments added to either calendar therefore block that time. If a calendar is unreachable, the app refuses to report a booking as fully synchronized rather than guessing.
 
 #### Q4: How does the AI handle patient cancellations?
-**Answer:** The assistant can cancel a local appointment using its appointment ID. Cancellation does not currently delete the corresponding external calendar event, so clinic staff must update that calendar manually; the slot may remain unavailable until they do.
+**Answer:** The assistant can cancel a local appointment using its appointment ID, and the corresponding event is deleted from both Google Calendar and Outlook. The appointment shows as `cancelling` and its slot stays blocked until both calendars have removed the event. If a calendar cannot be reached, the deletion is retried automatically; staff only need to intervene if the app marks the appointment for manual reconciliation.
 
 ---
 

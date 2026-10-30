@@ -17,6 +17,10 @@ class FailingCalendarProvider implements CalendarProvider {
   async createEvent(_input: CalendarEventInput): Promise<CreatedCalendarEvent> {
     throw new Error("upstream calendar unavailable: secret-token");
   }
+
+  async deleteEvent(): Promise<void> {
+    throw new Error("upstream calendar unavailable: secret-token");
+  }
 }
 
 describe("Appointments API Route Handlers", () => {
@@ -162,12 +166,11 @@ describe("Appointments API Route Handlers", () => {
       expect(json.appointment.status).toBe("confirmed");
     });
 
-    it("returns HTTP 502 with the safe error code when calendar synchronization fails", async () => {
+    it("returns HTTP 201 with a pending appointment when calendar synchronization fails", async () => {
       const failingRepository = new InMemoryAppointmentRepository();
-      const failingService = new AppointmentService(
-        failingRepository,
-        new FailingCalendarProvider(),
-      );
+      const failingService = new AppointmentService(failingRepository, {
+        google: new FailingCalendarProvider(),
+      });
       const handlers = createAppointmentsHandlers({
         repository: failingRepository,
         appointmentService: failingService,
@@ -187,18 +190,23 @@ describe("Appointments API Route Handlers", () => {
       });
 
       const res = await handlers.POST(req);
-      expect(res.status).toBe(502);
+      // The reservation exists, so the write is accepted; the appointment is
+      // reported as pending rather than presented as fully synchronized.
+      expect(res.status).toBe(201);
 
       const json = await res.json();
-      expect(json.success).toBe(false);
-      expect(json.code).toBe("CALENDAR_SYNC_FAILED");
-      expect(json.error).toBe("Calendar synchronization failed. Please try again.");
+      expect(json.success).toBe(true);
+      expect(json.appointment.status).toBe("pending");
       expect(JSON.stringify(json)).not.toContain("secret-token");
 
-      // The reservation must no longer block the slot.
-      const released = await failingRepository.find({ date: "2026-10-29" });
-      expect(released).toHaveLength(1);
-      expect(released[0]?.status).toBe("failed");
+      // The pending reservation keeps the slot blocked until reconciliation.
+      const stored = await failingRepository.find({ date: "2026-10-29" });
+      expect(stored).toHaveLength(1);
+      expect(stored[0]?.status).toBe("pending");
+
+      const syncs = await failingRepository.getCalendarSyncs(json.appointment.id);
+      expect(syncs).toHaveLength(1);
+      expect(syncs[0]).toMatchObject({ provider: "google", status: "pending", attempts: 1 });
     });
   });
 });

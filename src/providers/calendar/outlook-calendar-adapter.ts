@@ -307,4 +307,42 @@ export class OutlookCalendarAdapter implements CalendarProvider {
       end: normalizedInterval.end,
     };
   }
+
+  async deleteEvent(input: { dentistId: string; eventId: string }): Promise<void> {
+    const calendarId = this.resolveCalendarId(input.dentistId, "deleteEvent");
+    const token = await this.getAccessToken();
+
+    const url = `https://graph.microsoft.com/v1.0/me/calendars/${encodeURIComponent(
+      calendarId,
+    )}/events/${encodeURIComponent(input.eventId)}`;
+
+    let res: Response;
+    try {
+      res = await this.fetchFn(url, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+    } catch (err: unknown) {
+      throw new CalendarProviderError({
+        message: "Network failure during Microsoft Graph event deletion",
+        provider: "outlook",
+        operation: "deleteEvent",
+        cause: err,
+      });
+    }
+
+    // A previously deleted event is already in the desired state.
+    if (res.status === 404) {
+      return;
+    }
+
+    if (!res.ok) {
+      throw new CalendarProviderError({
+        message: "Microsoft Graph event deletion API returned an error response",
+        provider: "outlook",
+        operation: "deleteEvent",
+        status: res.status,
+      });
+    }
+  }
 }

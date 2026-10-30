@@ -3,6 +3,7 @@ import {
   AI_SETTING_KEYS,
   CALENDAR_PROVIDER_SETTING,
   DENTIST_IDS,
+  MAPPING_PROVIDERS,
   type AdminDentistMapping,
   type AdminSettingsUpdate,
   type AdminSettingsView,
@@ -11,10 +12,7 @@ import {
   type MappingProviderId,
   type SecretMetadataView,
 } from "../domain/admin-settings";
-import type {
-  DentistCalendarMappingRecord,
-  SettingsRepository,
-} from "../repository/settings-repository";
+import type { SettingsRepository } from "../repository/settings-repository";
 import type { SecretRepository } from "../repository/secret-repository";
 import {
   getRuntimeAdminSessionRepository,
@@ -36,12 +34,12 @@ type SettingsEnv = Record<string, string | undefined>;
 const SECRET_KEY_SET = new Set<string>(ALL_SECRET_KEYS);
 
 /**
- * Coerces persisted provider values to the supported enum; anything unknown
- * falls back to "none" so a bad row cannot enable an integration.
+ * Coerces persisted provider values to the supported enum. Any non-"none"
+ * value means both calendars are enabled: earlier releases stored a single
+ * "google" or "outlook", and the current requirement is to write to both.
  */
 export function normalizeCalendarProvider(raw: string | null | undefined): CalendarProviderId {
-  const value = raw?.trim().toLowerCase();
-  return value === "google" || value === "outlook" ? value : "none";
+  return raw?.trim().toLowerCase() === "none" ? "none" : "both";
 }
 
 function isDentistId(value: string): value is DentistId {
@@ -54,29 +52,6 @@ function isMappingProvider(value: string): value is MappingProviderId {
 
 function isSecretKey(value: string): value is SecretKey {
   return SECRET_KEY_SET.has(value);
-}
-
-/**
- * Picks one row per dentist, preferring the active provider and live rows so
- * the admin view stays stable when historical mappings exist.
- */
-function selectMapping(
-  records: DentistCalendarMappingRecord[],
-  preferredProvider: MappingProviderId,
-): DentistCalendarMappingRecord | undefined {
-  const byProvider = records.find(
-    (record) => record.provider === preferredProvider && record.isActive,
-  );
-  if (byProvider) {
-    return byProvider;
-  }
-
-  const preferredAnyState = records.find((record) => record.provider === preferredProvider);
-  if (preferredAnyState) {
-    return preferredAnyState;
-  }
-
-  return records.find((record) => record.isActive) ?? records[0];
 }
 
 function buildSecretView(
@@ -100,32 +75,20 @@ export async function readAdminSettings(deps: AdminSettingsDeps): Promise<AdminS
   const env = deps.env ?? process.env;
   const storedProvider = await deps.settingsRepository.getSetting(CALENDAR_PROVIDER_SETTING);
   const calendarProvider = normalizeCalendarProvider(storedProvider);
-  const preferredProvider: MappingProviderId =
-    calendarProvider === "outlook" ? "outlook" : "google";
 
   const records = await deps.settingsRepository.getAllDentistCalendarMappings();
   const usable = records.filter(
     (record) => isMappingProvider(record.provider) && isDentistId(record.dentistId),
   );
 
+  // One editable row per dentist carrying both provider calendar IDs. A blank
+  // value means that provider has no calendar for this dentist.
   const dentistMappings: AdminDentistMapping[] = DENTIST_IDS.map((dentistId) => {
-    const matches = usable.filter((record) => record.dentistId === dentistId);
-    const selected = selectMapping(matches, preferredProvider);
-    if (!selected) {
-      // Always return three editable rows even before any mapping is saved.
-      return {
-        dentistId,
-        provider: preferredProvider,
-        calendarId: "",
-        isActive: true,
-      };
-    }
-
+    const matches = usable.filter((record) => record.dentistId === dentistId && record.isActive);
     return {
       dentistId,
-      provider: selected.provider as MappingProviderId,
-      calendarId: selected.calendarId,
-      isActive: selected.isActive,
+      googleCalendarId: matches.find((record) => record.provider === "google")?.calendarId ?? "",
+      outlookCalendarId: matches.find((record) => record.provider === "outlook")?.calendarId ?? "",
     };
   });
 
@@ -141,7 +104,8 @@ export async function readAdminSettings(deps: AdminSettingsDeps): Promise<AdminS
 
 /**
  * Persists provider, mapping, and secret changes, then returns the refreshed
- * write-only view. Blank secret values preserve what is already stored.
+ * write-only view. Blank secret values preserve what is stored; a blank
+ * calendar ID clears that provider's mapping for the dentist.
  */
 export async function updateAdminSettings(
   deps: AdminSettingsDeps,
@@ -150,11 +114,18 @@ export async function updateAdminSettings(
   await deps.settingsRepository.setSetting(CALENDAR_PROVIDER_SETTING, input.calendarProvider);
 
   for (const mapping of input.dentistMappings) {
-    await deps.settingsRepository.upsertDentistCalendarMapping({
-      dentistId: mapping.dentistId,
-      provider: mapping.provider,
-      calendarId: mapping.calendarId.trim(),
-    });
+    const calendarIds: Record<MappingProviderId, string> = {
+      google: mapping.googleCalendarId.trim(),
+      outlook: mapping.outlookCalendarId.trim(),
+    };
+
+    for (const provider of MAPPING_PROVIDERS) {
+      await deps.settingsRepository.upsertDentistCalendarMapping({
+        dentistId: mapping.dentistId,
+        provider,
+        calendarId: calendarIds[provider],
+      });
+    }
   }
 
   if (input.ai) {

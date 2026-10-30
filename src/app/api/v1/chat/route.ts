@@ -32,10 +32,10 @@ const GENERIC_ERROR = "Internal server error";
  */
 async function buildRuntimeOrchestrator(): Promise<ChatOrchestrator> {
   const aiConfig = await getRuntimeAiConfig();
-  const calendarProvider = await getRuntimeCalendarProvider();
+  const calendarProviders = await getRuntimeCalendarProvider();
   const appointmentService = new AppointmentService(
     getRuntimeAppointmentRepository(),
-    calendarProvider,
+    calendarProviders,
   );
 
   return new ChatOrchestrator({

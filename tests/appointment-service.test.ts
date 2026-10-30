@@ -16,6 +16,7 @@ import { AppointmentService } from "../src/services/appointment-service";
 class MockCalendarProvider implements CalendarProvider {
   busyIntervals: BusyInterval[] = [];
   createdEvents: CalendarEventInput[] = [];
+  deletedEvents: Array<{ dentistId: string; eventId: string }> = [];
 
   async getBusyIntervals(_input: {
     dentistId: string;
@@ -33,6 +34,10 @@ class MockCalendarProvider implements CalendarProvider {
       end: input.end,
     };
   }
+
+  async deleteEvent(input: { dentistId: string; eventId: string }): Promise<void> {
+    this.deletedEvents.push(input);
+  }
 }
 
 describe("AppointmentService", () => {
@@ -43,7 +48,7 @@ describe("AppointmentService", () => {
   beforeEach(() => {
     repository = new InMemoryAppointmentRepository();
     calendarProvider = new MockCalendarProvider();
-    service = new AppointmentService(repository, calendarProvider);
+    service = new AppointmentService(repository, { google: calendarProvider });
   });
 
   describe("Dentist qualifications", () => {
@@ -233,7 +238,7 @@ describe("AppointmentService", () => {
   });
 
   describe("Booking lifecycle and calendar sync", () => {
-    it("successfully books appointment, creates calendar event via mock CalendarProvider, and saves confirmed record with calendarEventId", async () => {
+    it("successfully books appointment, creates the calendar event, and stores provider sync state", async () => {
       const record = await service.bookAppointment({
         patientName: "Laura",
         patientPhone: "08123456780",
@@ -245,21 +250,26 @@ describe("AppointmentService", () => {
 
       expect(record.id).toBeDefined();
       expect(record.status).toBe("confirmed");
-      expect(record.calendarEventId).toBe("cal-evt-1");
       expect(record.startTime).toBe("09:00");
       expect(record.endTime).toBe("10:00");
 
-      const saved = await repository.findById(record.id);
-      expect(saved).not.toBeNull();
-      expect(saved?.calendarEventId).toBe("cal-evt-1");
+      const syncs = await repository.getCalendarSyncs(record.id);
+      expect(syncs).toHaveLength(1);
+      expect(syncs[0]).toMatchObject({
+        provider: "google",
+        operation: "book",
+        status: "succeeded",
+        eventId: "cal-evt-1",
+      });
 
       expect(calendarProvider.createdEvents).toHaveLength(1);
       expect(calendarProvider.createdEvents[0]?.dentistId).toBe("junior");
       expect(calendarProvider.createdEvents[0]?.start).toBe("2026-10-25T02:00:00.000Z");
       expect(calendarProvider.createdEvents[0]?.end).toBe("2026-10-25T03:00:00.000Z");
+      expect(calendarProvider.createdEvents[0]?.idempotencyKey).toBe(record.id.replace(/-/g, ""));
     });
 
-    it("successfully cancels appointment and handles duplicate cancellation idempotently", async () => {
+    it("successfully cancels appointment, deletes the external event, and handles duplicate cancellation idempotently", async () => {
       const booked = await service.bookAppointment({
         patientName: "Mallory",
         patientPhone: "08123456781",
@@ -276,11 +286,17 @@ describe("AppointmentService", () => {
       expect(cancelled1.status).toBe("cancelled");
       expect(cancelled1.cancelledAt).toBeDefined();
 
+      expect(calendarProvider.deletedEvents).toEqual([
+        { dentistId: "junior", eventId: "cal-evt-1" },
+      ]);
+
       const cancelled2 = await service.cancelAppointment({
         appointmentId: booked.id,
       });
       expect(cancelled2.status).toBe("cancelled");
       expect(cancelled2.cancelledAt).toBe(cancelled1.cancelledAt);
+      // A repeated cancellation does not delete the same event twice.
+      expect(calendarProvider.deletedEvents).toHaveLength(1);
     });
 
     it("throws AppointmentNotFoundError when cancelling a non-existent appointment ID", async () => {

@@ -79,11 +79,15 @@ function authorizedHeaders(harness: Harness): Record<string, string> {
 }
 
 const validPayload = {
-  calendarProvider: "google",
+  calendarProvider: "both",
   dentistMappings: [
-    { dentistId: "junior", provider: "google", calendarId: "cal-junior" },
-    { dentistId: "senior-1", provider: "google", calendarId: "cal-senior-1" },
-    { dentistId: "senior-2", provider: "google", calendarId: "cal-senior-2" },
+    {
+      dentistId: "junior",
+      googleCalendarId: "cal-junior",
+      outlookCalendarId: "outlook-junior",
+    },
+    { dentistId: "senior-1", googleCalendarId: "cal-senior-1", outlookCalendarId: "" },
+    { dentistId: "senior-2", googleCalendarId: "cal-senior-2", outlookCalendarId: "" },
   ],
 };
 
@@ -281,7 +285,7 @@ describe("GET /api/v1/admin/settings", () => {
 
     const json = JSON.parse(text);
     expect(json.success).toBe(true);
-    expect(json.settings.calendarProvider).toBe("none");
+    expect(json.settings.calendarProvider).toBe("both");
     expect(json.settings.dentistMappings).toHaveLength(3);
     expect(json.settings.secrets["openai.apiKey"].isConfigured).toBe(true);
   });
@@ -362,11 +366,11 @@ describe("PUT /api/v1/admin/settings", () => {
     expect(text).not.toContain("sk-super-secret");
 
     const json = JSON.parse(text);
-    expect(json.settings.calendarProvider).toBe("google");
+    expect(json.settings.calendarProvider).toBe("both");
     expect(json.settings.dentistMappings[0]).toMatchObject({
       dentistId: "junior",
-      provider: "google",
-      calendarId: "cal-junior",
+      googleCalendarId: "cal-junior",
+      outlookCalendarId: "outlook-junior",
     });
     expect(json.settings.secrets["openai.apiKey"].isConfigured).toBe(true);
     expect(await harness.secretRepository.getSecret("openai.apiKey")).toBe("sk-super-secret");
@@ -405,15 +409,17 @@ describe("PUT /api/v1/admin/settings", () => {
           ...authorizedHeaders(harness),
         },
         body: JSON.stringify({
-          calendarProvider: "google",
-          dentistMappings: [{ dentistId: "junior", provider: "google", calendarId: "   " }],
+          calendarProvider: "both",
+          dentistMappings: [
+            { dentistId: "junior", googleCalendarId: "   ", outlookCalendarId: "" },
+          ],
         }),
       }),
     );
 
     expect(response.status).toBe(200);
     const json = await response.json();
-    expect(json.settings.dentistMappings[0].calendarId).toBe("");
+    expect(json.settings.dentistMappings[0].googleCalendarId).toBe("");
   });
 });
 

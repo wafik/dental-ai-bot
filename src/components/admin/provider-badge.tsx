@@ -5,11 +5,10 @@ import { CALENDAR_PROVIDER_LABELS, type CalendarProviderId } from "@/domain/admi
 
 const VARIANTS: Record<CalendarProviderId, "success" | "warning" | "outline"> = {
   none: "outline",
-  google: "success",
-  outlook: "success",
+  both: "success",
 };
 
-/** One consistent rendering of the active provider across the admin surface. */
+/** One consistent rendering of the active calendar mode across the admin surface. */
 export function ProviderBadge({ provider }: { provider: CalendarProviderId }) {
   return <Badge variant={VARIANTS[provider]}>{CALENDAR_PROVIDER_LABELS[provider]}</Badge>;
 }

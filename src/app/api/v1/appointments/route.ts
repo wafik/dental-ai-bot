@@ -34,8 +34,8 @@ export function createAppointmentsHandlers(deps: AppointmentsRouteDeps = {}) {
     if (deps.appointmentService) {
       return deps.appointmentService;
     }
-    const calendarProvider = await getRuntimeCalendarProvider();
-    return new AppointmentService(repository, calendarProvider);
+    const calendarProviders = await getRuntimeCalendarProvider();
+    return new AppointmentService(repository, calendarProviders);
   };
 
   const GET = async (request: Request): Promise<Response> => {
@@ -109,12 +109,9 @@ export function createAppointmentsHandlers(deps: AppointmentsRouteDeps = {}) {
         );
       }
       if (err instanceof AppointmentError) {
-        // The reservation was released, so retrying is safe; the upstream
-        // calendar is the failing component.
-        const status = err.code === "CALENDAR_SYNC_FAILED" ? 502 : 400;
         return NextResponse.json(
           { success: false, error: err.message, code: err.code },
-          { status },
+          { status: 400 },
         );
       }
       const message = err instanceof Error ? err.message : String(err);

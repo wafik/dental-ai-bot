@@ -19,6 +19,7 @@ import { ChatOrchestrator } from "../src/services/chat-orchestrator";
 class MockCalendarProvider implements CalendarProvider {
   busyIntervals: BusyInterval[] = [];
   createdEvents: CalendarEventInput[] = [];
+  deletedEvents: Array<{ dentistId: string; eventId: string }> = [];
 
   async getBusyIntervals(_input: {
     dentistId: string;
@@ -35,6 +36,10 @@ class MockCalendarProvider implements CalendarProvider {
       start: input.start,
       end: input.end,
     };
+  }
+
+  async deleteEvent(input: { dentistId: string; eventId: string }): Promise<void> {
+    this.deletedEvents.push(input);
   }
 }
 
@@ -69,7 +74,7 @@ describe("ChatOrchestrator", () => {
   beforeEach(() => {
     repository = new InMemoryAppointmentRepository();
     calendarProvider = new MockCalendarProvider();
-    appointmentService = new AppointmentService(repository, calendarProvider);
+    appointmentService = new AppointmentService(repository, { google: calendarProvider });
     mockLLM = new MockLLMProvider();
   });
 

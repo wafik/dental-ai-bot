@@ -4,10 +4,11 @@ import {
   type AppointmentRecord,
   type AppointmentStatus,
 } from "../domain/appointment";
+import type { AppointmentCalendarSync, CalendarSyncPatch } from "../domain/calendar-sync";
 import type { AppointmentFilter, AppointmentRepository } from "./appointment-repository";
 
 /** Statuses that occupy a dentist's time. */
-const ACTIVE_STATUSES: readonly AppointmentStatus[] = ["pending", "confirmed"];
+const ACTIVE_STATUSES: readonly AppointmentStatus[] = ["pending", "confirmed", "cancelling"];
 
 function isActive(status: AppointmentStatus): boolean {
   return ACTIVE_STATUSES.includes(status);
@@ -30,6 +31,11 @@ function overlaps(
  */
 export class InMemoryAppointmentRepository implements AppointmentRepository {
   private readonly records = new Map<string, AppointmentRecord>();
+  private readonly syncs = new Map<string, AppointmentCalendarSync>();
+
+  private syncKey(appointmentId: string, provider: string): string {
+    return `${appointmentId}:${provider}`;
+  }
 
   async create(record: AppointmentRecord): Promise<AppointmentRecord> {
     if (isActive(record.status)) {
@@ -64,7 +70,7 @@ export class InMemoryAppointmentRepository implements AppointmentRepository {
     return { ...reserved };
   }
 
-  async confirm(id: string, calendarEventId?: string): Promise<AppointmentRecord> {
+  async confirm(id: string): Promise<AppointmentRecord> {
     const existing = this.records.get(id);
     if (!existing) {
       throw new AppointmentNotFoundError(id);
@@ -73,7 +79,6 @@ export class InMemoryAppointmentRepository implements AppointmentRepository {
     const updated: AppointmentRecord = {
       ...existing,
       status: "confirmed",
-      calendarEventId: calendarEventId ?? existing.calendarEventId,
       updatedAt: new Date().toISOString(),
     };
 
@@ -140,5 +145,72 @@ export class InMemoryAppointmentRepository implements AppointmentRepository {
 
     this.records.set(id, updated);
     return { ...updated };
+  }
+
+  async saveCalendarSyncs(syncs: readonly AppointmentCalendarSync[]): Promise<void> {
+    for (const sync of syncs) {
+      this.syncs.set(this.syncKey(sync.appointmentId, sync.provider), { ...sync });
+    }
+  }
+
+  async getCalendarSyncs(appointmentId: string): Promise<AppointmentCalendarSync[]> {
+    const results: AppointmentCalendarSync[] = [];
+    for (const sync of this.syncs.values()) {
+      if (sync.appointmentId === appointmentId) {
+        results.push({ ...sync });
+      }
+    }
+    return results;
+  }
+
+  async updateCalendarSync(
+    appointmentId: string,
+    provider: string,
+    patch: CalendarSyncPatch,
+  ): Promise<AppointmentCalendarSync> {
+    const key = this.syncKey(appointmentId, provider);
+    const existing = this.syncs.get(key);
+    if (!existing) {
+      throw new AppointmentNotFoundError(appointmentId);
+    }
+
+    const updated: AppointmentCalendarSync = {
+      ...existing,
+      ...(patch.operation !== undefined ? { operation: patch.operation } : {}),
+      ...(patch.status !== undefined ? { status: patch.status } : {}),
+      ...(patch.eventId !== undefined
+        ? { eventId: patch.eventId === null ? undefined : patch.eventId }
+        : {}),
+      ...(patch.attempts !== undefined ? { attempts: patch.attempts } : {}),
+      ...(patch.lastError !== undefined
+        ? { lastError: patch.lastError === null ? undefined : patch.lastError }
+        : {}),
+      ...(patch.nextAttemptAt !== undefined ? { nextAttemptAt: patch.nextAttemptAt } : {}),
+      updatedAt: new Date().toISOString(),
+    };
+
+    this.syncs.set(key, updated);
+    return { ...updated };
+  }
+
+  async claimCalendarSyncs(
+    limit: number,
+    now: string,
+    leaseUntil: string,
+  ): Promise<AppointmentCalendarSync[]> {
+    const claimed: AppointmentCalendarSync[] = [];
+    for (const [key, sync] of this.syncs) {
+      if (claimed.length >= limit) {
+        break;
+      }
+      if (sync.status === "pending" && sync.nextAttemptAt <= now) {
+        // The check and the lease write happen synchronously, so two concurrent
+        // claims cannot both take the same row.
+        const leased: AppointmentCalendarSync = { ...sync, nextAttemptAt: leaseUntil };
+        this.syncs.set(key, leased);
+        claimed.push({ ...sync });
+      }
+    }
+    return claimed;
   }
 }

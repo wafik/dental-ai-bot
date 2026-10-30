@@ -23,16 +23,14 @@ import {
 } from "@/services/admin-settings-client";
 import { aiFieldErrors, calendarIdError, validateSecretField } from "@/utils/form-validation";
 
-const DEFAULT_MAPPING_PROVIDER = "google" as const;
-
 /** Every dentist always gets a row, even when the stored settings omit one. */
 export function toMappingDrafts(mappings: AdminDentistMapping[]): CalendarMappingDraft[] {
   return DENTIST_IDS.map((dentistId) => {
     const existing = mappings.find((mapping) => mapping.dentistId === dentistId);
     return {
       dentistId,
-      provider: existing?.provider ?? DEFAULT_MAPPING_PROVIDER,
-      calendarId: existing?.calendarId ?? "",
+      googleCalendarId: existing?.googleCalendarId ?? "",
+      outlookCalendarId: existing?.outlookCalendarId ?? "",
     };
   });
 }
@@ -126,7 +124,11 @@ export function useAdminSettings() {
   // server rules, so a bad value never round-trips.
   const hasFieldErrors =
     Object.keys(aiFieldErrors(ai)).length > 0 ||
-    mappings.some((mapping) => Boolean(calendarIdError(mapping.calendarId))) ||
+    mappings.some(
+      (mapping) =>
+        Boolean(calendarIdError(mapping.googleCalendarId)) ||
+        Boolean(calendarIdError(mapping.outlookCalendarId)),
+    ) ||
     Object.entries(drafts).some(([key, value]) => Boolean(validateSecretField(key, value)));
 
   const save = React.useCallback(async () => {
@@ -140,8 +142,8 @@ export function useAdminSettings() {
         calendarProvider: provider,
         dentistMappings: mappings.map((mapping) => ({
           dentistId: mapping.dentistId,
-          provider: mapping.provider,
-          calendarId: mapping.calendarId.trim(),
+          googleCalendarId: mapping.googleCalendarId.trim(),
+          outlookCalendarId: mapping.outlookCalendarId.trim(),
         })),
         ai: { baseUrl: ai.baseUrl.trim(), model: ai.model.trim() },
         secrets: drafts,

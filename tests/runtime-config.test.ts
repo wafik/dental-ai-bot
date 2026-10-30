@@ -5,6 +5,7 @@ import {
   resetCalendarProviderCache,
 } from "@/services/calendar-provider-cache";
 import { GoogleCalendarAdapter } from "@/providers/calendar/google-calendar-adapter";
+import { OutlookCalendarAdapter } from "@/providers/calendar/outlook-calendar-adapter";
 import { InMemorySettingsRepository } from "@/repository/in-memory-settings-repository";
 import { InMemorySecretRepository } from "@/repository/in-memory-admin-repositories";
 import type { SecretMetadata, SecretRepository } from "@/repository/secret-repository";
@@ -14,20 +15,26 @@ import { SECRET_KEYS } from "@/security/secret-keys";
 const ENCRYPTION_ENV = { SETTINGS_ENCRYPTION_KEY: "a".repeat(64) };
 
 const CALENDAR_ENV = {
-  CALENDAR_PROVIDER: "google",
+  CALENDAR_PROVIDER: "both",
   GOOGLE_CLIENT_ID: "client-id",
   GOOGLE_CLIENT_SECRET: "client-secret",
   GOOGLE_REFRESH_TOKEN: "refresh-token",
+  MICROSOFT_TENANT_ID: "tenant-id",
+  MICROSOFT_CLIENT_ID: "microsoft-client-id",
+  MICROSOFT_CLIENT_SECRET: "microsoft-client-secret",
+  MICROSOFT_REFRESH_TOKEN: "microsoft-refresh-token",
 };
 
-async function seedGoogleSettings(settingsRepository: InMemorySettingsRepository): Promise<void> {
-  await settingsRepository.setSetting(CALENDAR_PROVIDER_SETTING, "google");
-  for (const dentistId of ["junior", "senior-1", "senior-2"] as const) {
-    await settingsRepository.upsertDentistCalendarMapping({
-      dentistId,
-      provider: "google",
-      calendarId: `${dentistId}@calendar.google.com`,
-    });
+async function seedCalendarSettings(settingsRepository: InMemorySettingsRepository): Promise<void> {
+  await settingsRepository.setSetting(CALENDAR_PROVIDER_SETTING, "both");
+  for (const provider of ["google", "outlook"] as const) {
+    for (const dentistId of ["junior", "senior-1", "senior-2"] as const) {
+      await settingsRepository.upsertDentistCalendarMapping({
+        dentistId,
+        provider,
+        calendarId: `${dentistId}@${provider}.example`,
+      });
+    }
   }
 }
 
@@ -174,9 +181,9 @@ describe("getRuntimeCalendarProvider cache", () => {
     resetCalendarProviderCache();
   });
 
-  it("reuses the resolved provider while the fingerprint is unchanged", async () => {
+  it("reuses the resolved providers while the fingerprint is unchanged", async () => {
     const settingsRepository = new InMemorySettingsRepository();
-    await seedGoogleSettings(settingsRepository);
+    await seedCalendarSettings(settingsRepository);
     const secretRepository = new FakeSecretRepository();
 
     const first = await getRuntimeCalendarProvider({
@@ -195,7 +202,8 @@ describe("getRuntimeCalendarProvider cache", () => {
       env: CALENDAR_ENV,
     });
 
-    expect(first).toBeInstanceOf(GoogleCalendarAdapter);
+    expect(first.google).toBeInstanceOf(GoogleCalendarAdapter);
+    expect(first.outlook).toBeInstanceOf(OutlookCalendarAdapter);
     expect(second).toBe(first);
     expect(third).toBe(first);
     // Fingerprint is always checked, but credentials are only read on resolution.
@@ -205,7 +213,7 @@ describe("getRuntimeCalendarProvider cache", () => {
 
   it("re-resolves after a stored secret is updated", async () => {
     const settingsRepository = new InMemorySettingsRepository();
-    await seedGoogleSettings(settingsRepository);
+    await seedCalendarSettings(settingsRepository);
     const secretRepository = new FakeSecretRepository();
 
     const first = await getRuntimeCalendarProvider({
@@ -223,13 +231,13 @@ describe("getRuntimeCalendarProvider cache", () => {
     });
 
     expect(second).not.toBe(first);
-    expect(second).toBeInstanceOf(GoogleCalendarAdapter);
+    expect(second.google).toBeInstanceOf(GoogleCalendarAdapter);
     expect(secretRepository.resolvedCredentials).toBe(2);
   });
 
   it("re-resolves after a mapping changes", async () => {
     const settingsRepository = new InMemorySettingsRepository();
-    await seedGoogleSettings(settingsRepository);
+    await seedCalendarSettings(settingsRepository);
     const secretRepository = new FakeSecretRepository();
 
     const first = await getRuntimeCalendarProvider({
@@ -253,9 +261,9 @@ describe("getRuntimeCalendarProvider cache", () => {
     expect(second).not.toBe(first);
   });
 
-  it("re-resolves after the provider setting changes", async () => {
+  it("re-resolves to local-only mode after the provider setting changes", async () => {
     const settingsRepository = new InMemorySettingsRepository();
-    await seedGoogleSettings(settingsRepository);
+    await seedCalendarSettings(settingsRepository);
     const secretRepository = new FakeSecretRepository();
 
     const first = await getRuntimeCalendarProvider({
@@ -272,12 +280,13 @@ describe("getRuntimeCalendarProvider cache", () => {
       env: CALENDAR_ENV,
     });
 
-    expect(second).not.toBe(first);
+    expect(first.google).toBeInstanceOf(GoogleCalendarAdapter);
+    expect(second).toEqual({});
   });
 
   it("does not cache a failed resolution", async () => {
     const settingsRepository = new InMemorySettingsRepository();
-    await seedGoogleSettings(settingsRepository);
+    await seedCalendarSettings(settingsRepository);
     const secretRepository = new FakeSecretRepository();
 
     const originalGetSecret = secretRepository.getSecret.bind(secretRepository);
@@ -298,12 +307,12 @@ describe("getRuntimeCalendarProvider cache", () => {
       }),
     ).rejects.toThrow("secret store unavailable");
 
-    const provider = await getRuntimeCalendarProvider({
+    const providers = await getRuntimeCalendarProvider({
       settingsRepository,
       secretRepository,
       env: CALENDAR_ENV,
     });
 
-    expect(provider).toBeInstanceOf(GoogleCalendarAdapter);
+    expect(providers.google).toBeInstanceOf(GoogleCalendarAdapter);
   });
 });

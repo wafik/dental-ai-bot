@@ -50,7 +50,7 @@ Use Next.js App Router Route Handlers for the API delivery layer, with routes gr
 
 ### AI Layer
 - Define one `LLMProvider` contract for the provider-agnostic integration.
-- Start with one selected provider and implement the shared appointment tools: `check_availability`, `book_appointment`, `cancel_appointment`, and `list_services`.
+- Start with one selected provider and implement the shared appointment tools: `check_availability`, `book_appointment`, `cancel_appointment`, and `list_services`. (Calendar writes later became dual-provider; see the Calendar Layer notes below.)
 - Add another provider adapter only when a real fallback or provider switch is needed; do not scaffold unused integrations.
 
 ### Calendar Layer

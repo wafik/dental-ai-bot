@@ -85,23 +85,27 @@ describe("SecretInput", () => {
 });
 
 describe("CalendarSettingsSection", () => {
-  it("renders a stable calendar id input for every dentist", () => {
+  it("renders Google and Outlook calendar id inputs for every dentist", () => {
     const markup = renderToStaticMarkup(
       createElement(CalendarSettingsSection, {
         provider: "none",
         onProviderChange: noop,
         mappings: [
-          { dentistId: "junior", provider: "google", calendarId: "junior@example.com" },
-          { dentistId: "senior-1", provider: "google", calendarId: "" },
-          { dentistId: "senior-2", provider: "outlook", calendarId: "" },
+          {
+            dentistId: "junior",
+            googleCalendarId: "junior@example.com",
+            outlookCalendarId: "junior@clinic.onmicrosoft.com",
+          },
+          { dentistId: "senior-1", googleCalendarId: "", outlookCalendarId: "" },
+          { dentistId: "senior-2", googleCalendarId: "", outlookCalendarId: "" },
         ],
         onMappingChange: noop,
       }),
     );
 
     for (const dentistId of ["junior", "senior-1", "senior-2"]) {
-      expect(markup).toContain(`id="mapping-${dentistId}-calendar"`);
-      expect(markup).toContain(`id="mapping-${dentistId}-provider"`);
+      expect(markup).toContain(`id="mapping-${dentistId}-googleCalendarId"`);
+      expect(markup).toContain(`id="mapping-${dentistId}-outlookCalendarId"`);
     }
     expect(markup).toContain('id="calendar-provider"');
     expect(markup).toContain("Dr. Junior");
@@ -112,16 +116,17 @@ describe("CalendarSettingsSection", () => {
   it("falls back to a full mapping list when settings are empty", () => {
     const markup = renderToStaticMarkup(
       createElement(CalendarSettingsSection, {
-        provider: "google",
+        provider: "both",
         onProviderChange: noop,
         mappings: [],
         onMappingChange: noop,
       }),
     );
 
-    expect(markup).toContain('id="mapping-junior-calendar"');
-    expect(markup).toContain('id="mapping-senior-1-calendar"');
-    expect(markup).toContain('id="mapping-senior-2-calendar"');
+    expect(markup).toContain('id="mapping-junior-googleCalendarId"');
+    expect(markup).toContain('id="mapping-junior-outlookCalendarId"');
+    expect(markup).toContain('id="mapping-senior-1-googleCalendarId"');
+    expect(markup).toContain('id="mapping-senior-2-outlookCalendarId"');
   });
 });
 

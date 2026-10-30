@@ -14,7 +14,7 @@ import type {
 } from "../src/repository/appointment-repository";
 import { DrizzleAppointmentRepository } from "../src/repository/drizzle-appointment-repository";
 import { InMemoryAppointmentRepository } from "../src/repository/in-memory-appointment-repository";
-import { appointments } from "../src/repository/schema";
+import { appointments, appointmentCalendarSyncs } from "../src/repository/schema";
 
 describe("Appointment Domain Models & Error Types", () => {
   test("creates AppointmentError with message and default code", () => {
@@ -85,10 +85,21 @@ describe("Drizzle Schema Definition", () => {
     expect(appointments.startTime).toBeDefined();
     expect(appointments.endTime).toBeDefined();
     expect(appointments.status).toBeDefined();
-    expect(appointments.calendarEventId).toBeDefined();
     expect(appointments.createdAt).toBeDefined();
     expect(appointments.updatedAt).toBeDefined();
     expect(appointments.cancelledAt).toBeDefined();
+  });
+
+  test("defines a per-provider calendar sync table", () => {
+    expect(appointmentCalendarSyncs).toBeDefined();
+    expect(appointmentCalendarSyncs.appointmentId).toBeDefined();
+    expect(appointmentCalendarSyncs.provider).toBeDefined();
+    expect(appointmentCalendarSyncs.operation).toBeDefined();
+    expect(appointmentCalendarSyncs.status).toBeDefined();
+    expect(appointmentCalendarSyncs.eventId).toBeDefined();
+    expect(appointmentCalendarSyncs.attempts).toBeDefined();
+    expect(appointmentCalendarSyncs.nextAttemptAt).toBeDefined();
+    expect(appointmentCalendarSyncs.lastError).toBeDefined();
   });
 });
 
@@ -105,7 +116,6 @@ describe("InMemoryAppointmentRepository", () => {
     startTime: "09:00",
     endTime: "10:00",
     status: "confirmed",
-    calendarEventId: "cal-evt-1",
     createdAt: "2026-10-20T08:00:00.000Z",
     updatedAt: "2026-10-20T08:00:00.000Z",
   };
@@ -120,7 +130,6 @@ describe("InMemoryAppointmentRepository", () => {
     startTime: "10:30",
     endTime: "13:00",
     status: "confirmed",
-    calendarEventId: "cal-evt-2",
     createdAt: "2026-10-20T08:15:00.000Z",
     updatedAt: "2026-10-20T08:15:00.000Z",
   };
@@ -273,7 +282,6 @@ describe("InMemoryAppointmentRepository", () => {
       ...sampleRecord1,
       id: "apt-pending",
       status: "pending",
-      calendarEventId: undefined,
     });
 
     await expect(repository.create({ ...sampleRecord1, id: "apt-conflict" })).rejects.toThrow(
@@ -286,7 +294,6 @@ describe("InMemoryAppointmentRepository", () => {
       ...sampleRecord1,
       id: "apt-reserved",
       status: "pending",
-      calendarEventId: undefined,
     });
     expect(reserved.status).toBe("pending");
 
@@ -296,7 +303,6 @@ describe("InMemoryAppointmentRepository", () => {
         id: "apt-overlap",
         startTime: "09:30",
         endTime: "10:30",
-        calendarEventId: undefined,
       }),
     ).rejects.toBeInstanceOf(SlotUnavailableError);
 
@@ -306,7 +312,6 @@ describe("InMemoryAppointmentRepository", () => {
       id: "apt-adjacent",
       startTime: "10:00",
       endTime: "11:00",
-      calendarEventId: undefined,
     });
     expect(adjacent.status).toBe("pending");
   });
@@ -318,33 +323,27 @@ describe("InMemoryAppointmentRepository", () => {
     const reserved = await repository.reserveIfAvailable({
       ...sampleRecord1,
       id: "apt-new",
-      calendarEventId: undefined,
     });
     expect(reserved.status).toBe("pending");
   });
 
-  test("confirms a reservation with a calendar event ID", async () => {
+  test("confirms a pending reservation", async () => {
     await repository.create({
       ...sampleRecord1,
       id: "apt-to-confirm",
       status: "pending",
-      calendarEventId: undefined,
     });
 
-    const confirmed = await repository.confirm("apt-to-confirm", "cal-evt-9");
+    const confirmed = await repository.confirm("apt-to-confirm");
 
     expect(confirmed.status).toBe("confirmed");
-    expect(confirmed.calendarEventId).toBe("cal-evt-9");
 
     const found = await repository.findById("apt-to-confirm");
     expect(found?.status).toBe("confirmed");
-    expect(found?.calendarEventId).toBe("cal-evt-9");
   });
 
   test("throws AppointmentNotFoundError when confirming a non-existent appointment", async () => {
-    await expect(repository.confirm("missing-id", "cal-evt-1")).rejects.toBeInstanceOf(
-      AppointmentNotFoundError,
-    );
+    await expect(repository.confirm("missing-id")).rejects.toBeInstanceOf(AppointmentNotFoundError);
   });
 
   test("returns cloned records to prevent external mutation", async () => {
@@ -356,6 +355,81 @@ describe("InMemoryAppointmentRepository", () => {
 
     const reFetched = await repository.findById("apt-1");
     expect(reFetched?.patientName).toBe("Alice Smith");
+  });
+});
+
+describe("Per-provider calendar sync state", () => {
+  const NOW = "2026-10-26T09:00:00.000Z";
+
+  function syncRow(provider: "google" | "outlook", overrides: Record<string, unknown> = {}) {
+    return {
+      appointmentId: "apt-sync",
+      provider,
+      operation: "book" as const,
+      status: "pending" as const,
+      attempts: 0,
+      nextAttemptAt: NOW,
+      updatedAt: NOW,
+      ...overrides,
+    };
+  }
+
+  test("persists independent progress per provider", async () => {
+    const repository = new InMemoryAppointmentRepository();
+    await repository.saveCalendarSyncs([syncRow("google"), syncRow("outlook")]);
+
+    await repository.updateCalendarSync("apt-sync", "google", {
+      status: "succeeded",
+      eventId: "g-evt",
+    });
+
+    const syncs = await repository.getCalendarSyncs("apt-sync");
+    expect(syncs.find((sync) => sync.provider === "google")).toMatchObject({
+      status: "succeeded",
+      eventId: "g-evt",
+    });
+    expect(syncs.find((sync) => sync.provider === "outlook")).toMatchObject({
+      status: "pending",
+    });
+  });
+
+  test("claims only due pending rows and leases them", async () => {
+    const repository = new InMemoryAppointmentRepository();
+    await repository.saveCalendarSyncs([
+      syncRow("google"),
+      syncRow("outlook", { nextAttemptAt: "2026-10-26T10:00:00.000Z" }),
+    ]);
+
+    const leaseUntil = "2026-10-26T09:05:00.000Z";
+    const claimed = await repository.claimCalendarSyncs(10, NOW, leaseUntil);
+
+    expect(claimed).toHaveLength(1);
+    expect(claimed[0]?.provider).toBe("google");
+    expect(claimed[0]?.nextAttemptAt).toBe(NOW);
+
+    // A second claim while the lease is active gets nothing.
+    const second = await repository.claimCalendarSyncs(10, NOW, leaseUntil);
+    expect(second).toEqual([]);
+
+    const stored = await repository.getCalendarSyncs("apt-sync");
+    expect(stored.find((sync) => sync.provider === "google")?.nextAttemptAt).toBe(leaseUntil);
+  });
+
+  test("honors the claim limit and never claims succeeded rows", async () => {
+    const repository = new InMemoryAppointmentRepository();
+    await repository.saveCalendarSyncs([syncRow("google"), syncRow("outlook")]);
+    await repository.updateCalendarSync("apt-sync", "outlook", { status: "succeeded" });
+
+    const claimed = await repository.claimCalendarSyncs(1, NOW, "2026-10-26T09:05:00.000Z");
+    expect(claimed).toHaveLength(1);
+  });
+
+  test("throws when updating a sync row that does not exist", async () => {
+    const repository = new InMemoryAppointmentRepository();
+
+    await expect(
+      repository.updateCalendarSync("missing", "google", { status: "succeeded" }),
+    ).rejects.toBeInstanceOf(AppointmentNotFoundError);
   });
 });
 
