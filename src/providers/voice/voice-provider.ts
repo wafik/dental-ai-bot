@@ -1,11 +1,19 @@
-export type VoiceProviderId = "gemini-live" | "openai-realtime";
+export type VoiceProviderId = "gemini-live" | "openai-compatible";
+
+/** A tool already shaped for the provider's wire protocol. */
+export type VoiceToolDefinition = Record<string, unknown>;
 
 export type VoiceSessionResponse = {
   provider: VoiceProviderId;
   sessionId: string;
-  clientSecret: string;
+  clientSecret?: string;
+  /** WebSocket endpoint the browser connects to (OpenAI-compatible providers). */
+  endpoint?: string;
+  /** Session instructions and tools the browser must apply (OpenAI-compatible only). */
+  instructions?: string;
+  tools?: VoiceToolDefinition[];
   model: string;
-  voice: string;
+  voice?: string;
   expiresAt?: number;
 };
 

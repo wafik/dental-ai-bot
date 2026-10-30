@@ -1,10 +1,34 @@
 import { describe, expect, it } from "bun:test";
 import { InMemoryAppointmentRepository } from "../src/repository/in-memory-appointment-repository";
 import { AppointmentService } from "../src/services/appointment-service";
-import { createVoiceSessionHandler } from "../src/app/api/v1/voice/session/route";
+import {
+  createVoiceSessionHandler,
+  GET as getVoiceProvider,
+} from "../src/app/api/v1/voice/session/route";
 import { createVoiceToolsHandler } from "../src/app/api/v1/voice/tools/route";
 import { SlidingWindowRateLimiter } from "../src/safety/rate-limiter";
 import type { VoiceProvider, VoiceSessionResponse } from "../src/providers/voice/voice-provider";
+
+/** Runs a callback with voice env vars replaced, restoring them afterwards. */
+async function withVoiceEnv(
+  env: Record<string, string | undefined>,
+  run: () => Promise<void>,
+): Promise<void> {
+  const keys = ["GEMINI_API_KEY", "OPENAI_COMPATIBLE_VOICE_URL", "OPENAI_COMPATIBLE_VOICE_MODEL"];
+  const saved = keys.map((key) => [key, process.env[key]] as const);
+  try {
+    for (const key of keys) delete process.env[key];
+    for (const [key, value] of Object.entries(env)) {
+      if (value !== undefined) process.env[key] = value;
+    }
+    await run();
+  } finally {
+    for (const [key, value] of saved) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+}
 
 describe("Voice API Route Handlers", () => {
   describe("POST /api/v1/voice/session", () => {
@@ -51,6 +75,56 @@ describe("Voice API Route Handlers", () => {
       const json = await response.json();
       expect(json.success).toBe(false);
       expect(json.error).toBe("Internal server error");
+    });
+
+    it("selects the OpenAI-compatible provider when only its URL is configured", async () => {
+      await withVoiceEnv(
+        { OPENAI_COMPATIBLE_VOICE_URL: "ws://127.0.0.1:8765/v1/realtime" },
+        async () => {
+          const response = await createVoiceSessionHandler()();
+
+          expect(response.status).toBe(200);
+          const json = await response.json();
+          expect(json.data.provider).toBe("openai-compatible");
+          expect(json.data.endpoint).toBe("ws://127.0.0.1:8765/v1/realtime");
+          expect(json.data.instructions).toContain("BrightSmile Clinic");
+          expect(json.data.tools.map((tool: { name: string }) => tool.name)).toContain(
+            "book_appointment",
+          );
+        },
+      );
+    });
+
+    it("reports no provider instead of minting anything when nothing is configured", async () => {
+      await withVoiceEnv({}, async () => {
+        expect((await createVoiceSessionHandler()()).status).toBe(500);
+        const response = await getVoiceProvider();
+        expect(response.status).toBe(503);
+        const json = await response.json();
+        expect(json.success).toBe(false);
+      });
+    });
+
+    it("reports the configured provider so the browser can pick a transport", async () => {
+      await withVoiceEnv(
+        { OPENAI_COMPATIBLE_VOICE_URL: "ws://127.0.0.1:8765/v1/realtime" },
+        async () => {
+          const json = await (await getVoiceProvider()).json();
+          expect(json.data.provider).toBe("openai-compatible");
+        },
+      );
+
+      // Gemini wins when both are set: it is the only one that mints a token.
+      await withVoiceEnv(
+        {
+          GEMINI_API_KEY: "test-key",
+          OPENAI_COMPATIBLE_VOICE_URL: "ws://127.0.0.1:8765/v1/realtime",
+        },
+        async () => {
+          const json = await (await getVoiceProvider()).json();
+          expect(json.data.provider).toBe("gemini-live");
+        },
+      );
     });
   });
 
