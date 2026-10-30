@@ -5,6 +5,7 @@ import type {
   CalendarProvider,
   CreatedCalendarEvent,
 } from "../src/providers/calendar/calendar-provider";
+import type { AppointmentRepository } from "../src/repository/appointment-repository";
 import { InMemoryAppointmentRepository } from "../src/repository/in-memory-appointment-repository";
 import { AppointmentService } from "../src/services/appointment-service";
 import { createAppointmentsHandlers } from "../src/app/api/v1/appointments/route";
@@ -119,6 +120,24 @@ describe("Appointments API Route Handlers", () => {
       expect(json.success).toBe(true);
       expect(json.totalConfirmed).toBe(0);
       expect(json.appointments).toHaveLength(0);
+    });
+
+    it("redacts internal failures instead of echoing configuration errors", async () => {
+      const brokenRepository = {
+        find: async () => {
+          throw new Error("Both Google Calendar and Outlook must be configured.");
+        },
+      } as unknown as AppointmentRepository;
+      const handlers = createAppointmentsHandlers({ repository: brokenRepository });
+
+      const res = await handlers.GET(
+        new Request("http://localhost/api/v1/appointments?date=2026-10-30"),
+      );
+      expect(res.status).toBe(500);
+
+      const text = await res.text();
+      expect(text).toContain("Internal server error");
+      expect(text).not.toContain("Google Calendar");
     });
   });
 

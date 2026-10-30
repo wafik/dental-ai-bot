@@ -70,8 +70,10 @@ test.describe("Admin settings", () => {
     const body = await response.text();
     expect(body).not.toContain(DRAFT_SECRET);
 
-    // After save the draft is cleared and the value is write-only.
+    // After save the draft is cleared and the value is write-only. The status
+    // summary lives on the Overview tab, so switch to it before asserting.
     await expect(openAiInput).toHaveValue("");
+    await page.getByRole("tab", { name: "Overview" }).click();
     await expect(page.getByTestId("status-openai")).toContainText("Configured");
 
     // Reload persists configuration but never returns the secret.
@@ -90,6 +92,18 @@ test.describe("Admin settings", () => {
     await expect(page.getByRole("button", { name: "Show value" })).toHaveCount(0);
     await expect(page.locator("#ai-baseUrl")).toHaveValue("https://proxy.e2e.test/v1");
     await expect(page.locator("#ai-model")).toHaveValue("e2e-model");
+
+    // The database is shared with the other specs, so put the provider back to
+    // the local-only mode the E2E environment starts with. Leaving "both"
+    // stored (with placeholder calendar IDs) makes later bookings fail closed.
+    await page.getByRole("tab", { name: "Calendar" }).click();
+    await page.locator("#calendar-provider").selectOption("none");
+    const restoreResponse = page.waitForResponse(
+      (response) =>
+        response.url().endsWith("/api/v1/admin/settings") && response.request().method() === "PUT",
+    );
+    await page.getByTestId("save-settings").click();
+    expect((await restoreResponse).status()).toBe(200);
 
     // Logout revokes access.
     await page.getByTestId("logout").click();

@@ -15,6 +15,9 @@ export type AppointmentsRouteDeps = {
   appointmentService?: AppointmentService;
 };
 
+/** Unauthenticated endpoint: unexpected failures must not reveal internals. */
+const GENERIC_ERROR = "Internal server error";
+
 const BookAppointmentSchema = z.object({
   patientName: z.string().min(2, "Patient name must be at least 2 characters"),
   patientPhone: z.string().min(6, "Patient phone must be at least 6 characters"),
@@ -80,9 +83,8 @@ export function createAppointmentsHandlers(deps: AppointmentsRouteDeps = {}) {
         },
         { status: 200 },
       );
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-      return NextResponse.json({ success: false, error: message }, { status: 500 });
+    } catch {
+      return NextResponse.json({ success: false, error: GENERIC_ERROR }, { status: 500 });
     }
   };
 
@@ -125,8 +127,7 @@ export function createAppointmentsHandlers(deps: AppointmentsRouteDeps = {}) {
           { status: 400 },
         );
       }
-      const message = err instanceof Error ? err.message : String(err);
-      return NextResponse.json({ success: false, error: message }, { status: 500 });
+      return NextResponse.json({ success: false, error: GENERIC_ERROR }, { status: 500 });
     }
   };
 
