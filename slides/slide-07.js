@@ -61,7 +61,7 @@ function createSlide(pres, theme) {
       { text: "% Total", options: { bold: true, color: "FFFFFF", fill: { color: theme.primary } } },
     ],
     [
-      { text: "Voice AI (OpenAI Realtime)", options: { bold: true, color: theme.primary } },
+      { text: "Voice AI (Realtime, illustrative)", options: { bold: true, color: theme.primary } },
       { text: "3,000 Spoken Min", options: { color: theme.secondary } },
       { text: "$555.00", options: { bold: true, color: theme.accent } },
       { text: "92.6%", options: { color: theme.secondary } },

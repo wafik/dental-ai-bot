@@ -58,7 +58,7 @@ function createSlide(pres, theme) {
       step: "STEP 01",
       title: "Patient Inbound",
       sub: "Voice or Chat",
-      desc: "Patient speaks via WebRTC audio (Opus) or sends message via Next.js chat portal.",
+      desc: "Patient speaks via streaming PCM audio over WebSocket, or sends a message via the Next.js chat portal.",
       color: "0284C7",
       bg: "F0F9FF",
     },
@@ -74,7 +74,7 @@ function createSlide(pres, theme) {
       step: "STEP 03",
       title: "App Router API",
       sub: "Voice & Tools Gate",
-      desc: "Issues <60s ephemeral secrets. Routes tool executions via WebRTC DataChannel.",
+      desc: "Selects the configured voice provider and returns its session descriptor. Tool calls are executed server-side.",
       color: "0F172A",
       bg: "F1F5F9",
     },
@@ -242,8 +242,8 @@ function createSlide(pres, theme) {
 
   const guarantees = [
     {
-      title: "1. Ephemeral Secret Isolation",
-      text: "Master OpenAI keys never touch the browser. Short-lived tokens expire in <60 seconds.",
+      title: "1. Server-Owned Voice Session",
+      text: "Master provider keys never touch the browser. The server returns only a session descriptor with the role and tools it granted.",
     },
     {
       title: "2. Authoritative Clinical Guard",

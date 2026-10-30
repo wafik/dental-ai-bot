@@ -96,6 +96,7 @@ Your clinic staff can monitor appointments in real time via the web portal:
 2. **Real-Time Voice Assistant:**
    * Patients or staff can click **Start Voice Call** to test or make appointments using natural conversational speech.
    * Works on any computer, tablet, or smartphone with a microphone.
+   * Audio is streamed to whichever realtime voice provider the deployment is configured with (Google Gemini Live, or an OpenAI Realtime-compatible endpoint such as a self-hosted server). Ask your deployment owner which one is active.
 3. **AI Text Chat:**
    * Patients who prefer typing can use the chat window. They can ask questions, verify open time slots, and receive instant confirmation.
    * New assistant replies are read aloud by default. Use **Auto-read on/off** in the chat header to disable or re-enable speech. Each reply also has a **Read aloud** button for manual playback or retry if automatic playback is blocked.

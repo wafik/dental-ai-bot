@@ -149,7 +149,7 @@ function createSlide(pres, theme) {
 
   const solutions = [
     { bold: "83% Cost Reduction: ", desc: "Full operational stack costs only $599/mo with unlimited concurrent capacity." },
-    { bold: "24/7/365 Omnichannel: ", desc: "Patients book anytime via spoken voice calls (WebRTC) or instant chat." },
+    { bold: "24/7/365 Omnichannel: ", desc: "Patients book anytime via spoken voice calls (streaming WebSocket) or instant chat." },
     { bold: "Zero Double-Booking: ", desc: "Atomic database locking and live sync to Google Calendar & Outlook." },
     { bold: "Clinical Qualification: ", desc: "Backend hard rules prevent booking complex surgery with junior dentists." },
   ];

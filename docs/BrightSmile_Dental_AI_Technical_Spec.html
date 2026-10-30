@@ -224,7 +224,7 @@
 </head>
 <body>
 
-  <!-- ==================== PAGE 1: ARCHITECTURE, WEBRTC & DOMAIN SCHEDULING ==================== -->
+  <!-- ==================== PAGE 1: ARCHITECTURE, REALTIME VOICE & DOMAIN SCHEDULING ==================== -->
   <div class="page">
     <div style="flex: 1; display: flex; flex-direction: column; justify-content: space-between;">
 
@@ -234,7 +234,7 @@
           <div>
             <div style="display: flex; align-items: center; gap: 5px; margin-bottom: 2px;">
               <span class="tag tag-neutral">RFC-STYLE SYSTEMS SPECIFICATION</span>
-              <span class="tag tag-blue">NEXT.JS 16 &bull; REACT 19 &bull; WEBRTC</span>
+              <span class="tag tag-blue">NEXT.JS 16 &bull; REACT 19 &bull; WEBSOCKET VOICE</span>
               <span class="tag tag-green">STRICT TYPESCRIPT</span>
             </div>
             <h1 class="title-h1">BrightSmile AI: Systems Engineering Specification</h1>
@@ -253,11 +253,11 @@
         <div class="row" style="margin-bottom: 2px;">
           <div class="metric-card">
             <div class="metric-val">&lt; 300 ms</div>
-            <div class="metric-label">Full-Duplex Audio Turnaround</div>
+            <div class="metric-label">Full-Duplex Audio Turnaround (target)</div>
           </div>
           <div class="metric-card">
-            <div class="metric-val">48 kHz</div>
-            <div class="metric-label">Opus Codec Sample Rate</div>
+            <div class="metric-val">16 / 24 kHz</div>
+            <div class="metric-label">PCM Input / Output Rate</div>
           </div>
           <div class="metric-card">
             <div class="metric-val">30 min</div>
@@ -270,40 +270,43 @@
         </div>
       </div>
 
-      <!-- Section 1: Inbound WebRTC Voice Mechanics & Ephemeral Auth -->
+      <!-- Section 1: Inbound Realtime Voice Mechanics & Provider Selection -->
       <div>
         <div class="section-header">
-          <span class="section-title">1. Realtime WebRTC Media Gateway &amp; Tool Dispatch</span>
-          <span class="section-sub">RFC 8829 / DataChannel JSON-RPC</span>
+          <span class="section-title">1. Realtime Voice Gateway &amp; Tool Dispatch</span>
+          <span class="section-sub">WebSocket PCM &bull; Provider-Agnostic</span>
         </div>
         <div class="row" style="gap: 8px; margin-bottom: 4px;">
           <div class="col" style="flex: 1.2;">
-            <div class="code-block"><span class="cmt">// 1. Ephemeral session negotiation (Server-side)</span>
+            <div class="code-block"><span class="cmt">// 1. Provider selection + session descriptor (Server-side)</span>
+<span class="kw">GET</span> /api/v1/voice/session &rarr; { <span class="prop">"provider"</span>: <span class="str">"gemini-live"</span> | <span class="str">"openai-compatible"</span> }
 <span class="kw">POST</span> /api/v1/voice/session &rarr; 200 OK
 {
   <span class="prop">"success"</span>: <span class="kw">true</span>,
   <span class="prop">"data"</span>: {
-    <span class="prop">"client_secret"</span>: { <span class="prop">"value"</span>: <span class="str">"ek_live_..."</span>, <span class="prop">"expires_at"</span>: 1776841200 },
-    <span class="prop">"model"</span>: <span class="str">"gpt-4o-realtime-preview"</span>,
-    <span class="prop">"voice"</span>: <span class="str">"alloy"</span>,
-    <span class="prop">"input_audio_format"</span>: <span class="str">"pcm16"</span>
+    <span class="prop">"provider"</span>: <span class="str">"gemini-live"</span>,
+    <span class="prop">"clientSecret"</span>: <span class="str">"auth_tokens/..."</span>,  <span class="cmt">// single-use, Gemini only</span>
+    <span class="prop">"model"</span>: <span class="str">"gemini-2.5-flash-native-audio-latest"</span>,
+    <span class="prop">"voice"</span>: <span class="str">"Aoede"</span>
   }
 }
-<span class="cmt">// 2. WebRTC PeerConnection negotiation (Client-side)</span>
-<span class="kw">const</span> pc = <span class="kw">new</span> <span class="fn">RTCPeerConnection</span>({ iceServers: [...] });
-pc.<span class="fn">addTransceiver</span>(audioTrack, { direction: <span class="str">"sendrecv"</span> });
-<span class="kw">const</span> dc = pc.<span class="fn">createDataChannel</span>(<span class="str">"oai-events"</span>);</div>
+<span class="cmt">// 2. WebSocket streaming (Client-side)</span>
+<span class="kw">const</span> ws = <span class="kw">new</span> <span class="fn">WebSocket</span>(endpoint);
+<span class="cmt">// PCM16 16 kHz in, 24 kHz out, base64 JSON frames</span></div>
           </div>
           <div class="panel col" style="flex: 1.4; justify-content: space-between;">
             <div>
               <div style="font-weight: 600; font-size: 7.6pt; color: #18181b; margin-bottom: 2px;">Low-Latency Protocol Exchange</div>
               <p style="font-size: 7pt; color: #52525b; line-height: 1.35;">
-                <strong>1. Token Brokering:</strong> Browser initiates <code>POST /api/v1/voice/session</code>. The backend injects the clinic master secret, establishing an ephemeral token with a &lt;60s TTL. Master credentials never leak to the client.<br>
-                <strong>2. Media Tunnel:</strong> Client establishes a direct WebRTC peer connection to OpenAI Realtime. Audio frames stream as 48kHz Opus via SRTP without transcription middleware.<br>
-                <strong>3. Tool Dispatch:</strong> When an intent settles, the LLM emits a function call across the WebRTC DataChannel. The browser relays this to <code>POST /api/v1/voice/tools</code> for backend validation.
+                <strong>1. Provider Selection:</strong> <code>GET /api/v1/voice/session</code> reports the configured provider so the browser can choose a transport without spending a single-use token.<br>
+                <strong>2. Session Descriptor:</strong> <code>POST /api/v1/voice/session</code> returns the endpoint, model and credentials. With Gemini Live the backend mints a single-use token; master credentials never leak to the client.<br>
+                <strong>3. Media Stream:</strong> Audio streams as base64 PCM16 over WebSocket — 16 kHz up, 24 kHz down — with no separate STT hop.<br>
+                <strong>4. Tool Dispatch:</strong> The model emits a function call; the browser relays it to <code>POST /api/v1/voice/tools</code> for backend validation, then returns the result to the model.
               </p>
             </div>
             <div class="panel-muted" style="padding: 4px 6px; margin-top: 3px; font-size: 6.8pt; color: #52525b;">
+              <strong style="color: #18181b;">Providers:</strong>
+              <code>gemini-live</code> &bull; <code>openai-compatible</code> (any Realtime GA endpoint)<br>
               <strong style="color: #18181b;">Registered Tool Schemas:</strong>
               <code>list_services</code> &bull; <code>check_availability</code> &bull; <code>book_appointment</code> &bull; <code>cancel_appointment</code>
             </div>
@@ -543,7 +546,7 @@ pc.<span class="fn">addTransceiver</span>(audioTrack, { direction: <span class="
               </thead>
               <tbody>
                 <tr>
-                  <td><strong>OpenAI Realtime Audio</strong></td>
+                  <td><strong>Realtime Voice Audio</strong> <span style="font-size:6.5pt;color:#71717a;">(illustrative: OpenAI Realtime rates as a stand-in)</span></td>
                   <td>3,000 spoken minutes</td>
                   <td class="text-right">$0.06/min in, $0.24/min out</td>
                   <td class="text-right" style="font-weight: 600;">$555.00</td>

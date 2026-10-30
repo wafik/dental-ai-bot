@@ -3,19 +3,19 @@ const pptxgen = require("pptxgenjs");
 const slideConfig = {
   type: "content",
   index: 5,
-  title: "Real-Time WebRTC Voice AI Architecture Flow",
+  title: "Realtime Streaming Voice AI Architecture Flow",
 };
 
 /**
- * Slide 5: Real-Time WebRTC Voice AI Architecture Flow
- * Step-by-step visual diagram of ephemeral token gating and WebRTC tool execution.
+ * Slide 5: Realtime Streaming Voice AI Architecture Flow
+ * Step-by-step visual diagram of provider selection, session gating, and server tool execution.
  */
 function createSlide(pres, theme) {
   const slide = pres.addSlide();
   slide.background = { color: theme.bg };
 
   // Category Tracker
-  slide.addText("CONVERSATIONAL VOICE AI & WEBRTC FLOW", {
+  slide.addText("CONVERSATIONAL VOICE AI & WEBSOCKET FLOW", {
     x: 0.8,
     y: 0.45,
     w: 8.0,
@@ -27,7 +27,7 @@ function createSlide(pres, theme) {
   });
 
   // Action Title
-  slide.addText("Low-Latency WebRTC Voice Architecture (<300ms)", {
+  slide.addText("Provider-Agnostic Streaming Voice Architecture", {
     x: 0.8,
     y: 0.72,
     w: 8.4,
@@ -40,7 +40,7 @@ function createSlide(pres, theme) {
 
   // Subtitle
   slide.addText(
-    "How patient voice streams directly to the AI engine while clinical tool calls are verified safely on the backend.",
+    "How patient voice streams over WebSocket to the configured realtime provider while clinical tool calls are verified safely on the backend.",
     {
       x: 0.8,
       y: 1.15,
@@ -56,19 +56,19 @@ function createSlide(pres, theme) {
   const flowCards = [
     {
       num: "PHASE 1",
-      title: "Ephemeral Token Gate",
-      target: "POST /api/v1/voice/session",
-      desc: "Client browser requests a temporary session token. Next.js server calls OpenAI to generate an ephemeral client secret with <60s expiry.",
+      title: "Provider Session Gate",
+      target: "GET /api/v1/voice/session",
+      desc: "Server picks the configured voice provider and returns its session descriptor: a single-use Gemini token, or a direct endpoint URL when an OpenAI-compatible server is configured.",
       badge: "ZERO API KEY LEAKAGE",
       badgeColor: "0284C7",
       bgColor: "F0F9FF",
     },
     {
       num: "PHASE 2",
-      title: "Direct WebRTC Audio",
-      target: "PeerConnection (Opus Audio)",
-      desc: "Browser establishes direct full-duplex WebRTC audio connection to OpenAI Realtime. Provides human-like speech with immediate interruption capability.",
-      badge: "<300ms LATENCY",
+      title: "Streaming WebSocket Audio",
+      target: "WebSocket (PCM16 16/24 kHz)",
+      desc: "Browser streams base64 PCM audio over a WebSocket to the realtime provider in both directions. Full-duplex audio with immediate interruption handling.",
+      badge: "PROVIDER-AGNOSTIC",
       badgeColor: "0F172A",
       bgColor: "F8FAFC",
     },
@@ -76,7 +76,7 @@ function createSlide(pres, theme) {
       num: "PHASE 3",
       title: "Server Tool Execution",
       target: "POST /api/v1/voice/tools",
-      desc: "When patient confirms a slot, function calling triggers over WebRTC DataChannel. The backend validates doctor qualification and writes to the DB.",
+      desc: "When the patient confirms a slot, the provider emits a tool call that the browser relays to the server. The backend validates doctor qualification and writes to the DB.",
       badge: "CLINICAL RULE ENFORCED",
       badgeColor: "16A34A",
       bgColor: "F0FDF4",
@@ -223,7 +223,7 @@ function createSlide(pres, theme) {
     }
   });
 
-  // Bottom Comparison: Traditional Cascading Pipeline vs BrightSmile WebRTC
+  // Bottom Comparison: Traditional Cascading Pipeline vs BrightSmile streaming engine
   const bottomY = 4.05;
   const bottomH = 0.95;
 
@@ -271,7 +271,7 @@ function createSlide(pres, theme) {
     line: { color: "E2E8F0", width: 1 },
   });
 
-  slide.addText("BRIGHTSMILE WEBRTC ENGINE (<300ms Delay)", {
+  slide.addText("BRIGHTSMILE STREAMING ENGINE", {
     x: startX + 4.35,
     y: bottomY + 0.12,
     w: 3.8,

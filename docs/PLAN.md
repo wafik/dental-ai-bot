@@ -126,7 +126,7 @@ Keep shared domain enums/constants in one shared location rather than duplicatin
 - [x] Implement PostgreSQL schema and repository using Drizzle ORM (`src/repository/schema.ts`, `DrizzleAppointmentRepository`, `InMemoryAppointmentRepository`).
 
 ### Day 4 (Tuesday, October 27): Conversational Voice AI
-- [x] Implement real-time browser voice conversation using the selected provider's supported browser transport (WebRTC with ephemeral session token via `/api/v1/voice/session`).
+- [x] Implement real-time browser voice conversation over WebSocket (PCM16 audio, provider chosen by the session route) via `/api/v1/voice/session`. Providers: Gemini Live (ephemeral token) and any OpenAI Realtime-compatible endpoint.
 - [x] Reuse the same availability and booking tools as text chat so spoken requests use the same server-side validation and calendar operations (`/api/v1/voice/tools`, `VoiceSessionManager`).
 
 ### Day 5 (Wednesday, October 28): Web UI and Safety

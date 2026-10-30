@@ -7,7 +7,7 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-blue?logo=typescript)](https://www.typescriptlang.org)
 [![Playwright](https://img.shields.io/badge/Playwright-E2E%20Tested-green?logo=playwright)](https://playwright.dev)
 
-A modern, production-grade conversational AI assistant designed for dental clinics. Enables patients to check availability, schedule appointments, and inquire about treatments using **two-way real-time voice calls (WebRTC)** and **interactive text chat**, backed by **authoritative dentist qualification rules** and **bidirectional calendar sync** with both **Google Calendar** and **Microsoft Outlook**.
+A modern, production-grade conversational AI assistant designed for dental clinics. Enables patients to check availability, schedule appointments, and inquire about treatments using **two-way real-time voice calls** (WebSocket streaming, provider-agnostic) and **interactive text chat**, backed by **authoritative dentist qualification rules** and **bidirectional calendar sync** with both **Google Calendar** and **Microsoft Outlook**.
 
 ---
 
@@ -19,7 +19,7 @@ A modern, production-grade conversational AI assistant designed for dental clini
 
 ## 📸 Interface Screenshots
 
-| 💬 AI Text Chat | 🎙️ WebRTC Voice Assistant |
+| 💬 AI Text Chat | 🎙️ Real-Time Voice Assistant |
 | :---: | :---: |
 | ![AI Chat Portal](docs/screenshots/01-ai-chat-portal.png) | ![Voice Call Widget](docs/screenshots/02-voice-call-widget.png) |
 | **📅 Dentist Live Schedules** | **🩺 Services Catalog & Qualifications** |
@@ -52,16 +52,17 @@ dental-ai-bot/
 │   │   ├── page.tsx              # Unified clinical portal (Chat, Voice, Matrix, Services)
 │   │   └── api/v1/
 │   │       ├── chat/             # Guarded text chat delivery with rate limiter
-│   │       ├── voice/session/    # Ephemeral WebRTC session token gate
+│   │       ├── voice/session/    # Provider selection + ephemeral Gemini token gate
 │   │       ├── voice/tools/      # Authoritative tool execution for voice events
 │   │       └── appointments/     # Daily schedule query & direct booking API
 │   ├── components/               # UI components (ChatWidget, VoiceWidget, SchedulePreview)
 │   ├── domain/                   # Pure business logic (Dentists, Services, Scheduling engine)
-│   ├── features/voice/           # WebRTC client engine & React hook (VoiceSessionManager)
+│   ├── features/voice/           # VoiceSessionManager, discrete Gemini Live and
+│   │                             #   OpenAI Realtime-compatible transports, shared audio plumbing
 │   ├── providers/
 │   │   ├── ai/                   # Provider-neutral LLM contract & OpenAI adapter
 │   │   ├── calendar/             # Provider-neutral Calendar contract, Google & Outlook adapters
-│   │   └── voice/                # Ephemeral token voice provider contract & Realtime adapter
+│   │   └── voice/                # Voice provider contract, Gemini Live & OpenAI-compatible adapters
 │   ├── repository/               # PostgreSQL persistence (Drizzle ORM) + In-Memory repository
 │   ├── safety/                   # Prompt injection defense, medical deflection & rate limiter
 │   └── services/                 # Chat orchestrator, AppointmentService & tool definitions
@@ -71,7 +72,7 @@ dental-ai-bot/
 ```
 
 ### Key Highlights:
-1. **Zero Client Secret Leakage:** Master API keys (`OPENAI_API_KEY`) never reach client browsers. Voice calls authenticate using ephemeral tokens issued by `/api/v1/voice/session` with under 60-second validity.
+1. **Zero Client Secret Leakage:** Master API keys never reach client browsers. With Gemini Live the server mints a short-lived single-use token via `/api/v1/voice/session`; with an OpenAI Realtime-compatible endpoint there is no token to mint and the browser connects to the configured WebSocket directly.
 2. **Dual-Calendar Parity:** Unified `CalendarProvider` contract synchronizes bookings with **Google Calendar (API v3)** and **Microsoft Outlook (Microsoft Graph)** with canonical RFC3339 UTC timestamps.
 3. **Enterprise Safety & Guardrails:** 
    - `sanitizeUserInput`: Intercepts prompt injections (`DAN`, `ignore previous instructions`, `leak system prompt`).
@@ -116,7 +117,19 @@ CLINIC_TIMEZONE="Asia/Jakarta"
 CALENDAR_PROVIDER="both" # or "none" for local-only mode
 KOKORO_TTS_BASE_URL="http://localhost:8880/v1"
 KOKORO_TTS_VOICE="af_heart"
+
+# Voice: pick one. GEMINI_API_KEY wins when both are set.
+GEMINI_API_KEY="your-gemini-api-key"
+# OPENAI_COMPATIBLE_VOICE_URL="ws://127.0.0.1:8765/v1/realtime"
 ```
+
+Voice has two implementations behind one contract. With `GEMINI_API_KEY` set, the server mints a
+single-use Gemini Live token and the browser connects to the constrained Gemini socket. With only
+`OPENAI_COMPATIBLE_VOICE_URL` set, the browser connects straight to that OpenAI Realtime GA endpoint
+(a self-hosted speech-to-speech server, OpenAI itself, or another compatible provider) — no token is
+minted because there is none to mint. The role and the appointment tools are supplied by the server
+in both cases, so the client cannot widen the assistant's scope. `GET /api/v1/voice/session` reports
+which provider is active; the browser uses it to choose a transport.
 
 Every booking is written to **both** Google Calendar and Outlook. Calendar resolution is
 fail-closed: with `CALENDAR_PROVIDER="both"` (the default), a missing provider credential block or a
@@ -188,7 +201,7 @@ bun run check
 # 3. Lint code (Oxlint - zero warnings)
 bun run lint
 
-# 4. Unit & Integration Test Suite (181 tests passing in ~200ms)
+# 4. Unit & Integration Test Suite
 bun test
 
 # 5. Playwright End-to-End Tests (starts a disposable PostgreSQL container; Docker required)
@@ -206,7 +219,7 @@ A concrete monthly cost model for an active dental clinic handling **1,000 voice
 
 | Service Category | Monthly Cost (USD) | Notes |
 | :--- | :--- | :--- |
-| **Conversational Voice AI (OpenAI Realtime WebRTC)** | $555.00 | 3,000 spoken minutes @ $0.06 in / $0.24 out |
+| **Conversational Voice AI (illustrative)** | $555.00 | 3,000 spoken minutes @ $0.06 in / $0.24 out; OpenAI Realtime rates used as a stand-in, not a quoted Gemini Live price |
 | **Text Chat LLM (GPT-4o-mini)** | $4.05 | 18M input tokens / 2.25M output tokens |
 | **Application Hosting (Vercel / AWS ECS)** | $20.00 | Serverless Next.js edge runtime |
 | **Managed Database (PostgreSQL / Neon / Supabase)** | $15.00 | Dedicated instance with automated backups |

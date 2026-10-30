@@ -9,7 +9,7 @@
 
 ## 1. Executive Summary & Architecture Overview
 
-The Dental Clinic Conversational AI platform provides an enterprise-grade, omnichannel patient scheduling solution. Patients can book, inquire, reschedule, and verify dental appointments through two-way natural voice calls (WebRTC) and text chat.
+The Dental Clinic Conversational AI platform provides an enterprise-grade, omnichannel patient scheduling solution. Patients can book, inquire, reschedule, and verify dental appointments through two-way natural voice calls (streamed over WebSocket) and text chat.
 
 The architecture enforces strict clinical safety guardrails, provider-agnostic modularity, authoritative backend validation, and bidirectional calendar synchronization with both Google Calendar and Microsoft 365 Outlook.
 
@@ -19,7 +19,7 @@ The architecture enforces strict clinical safety guardrails, provider-agnostic m
 flowchart TB
     subgraph ClientLayer [Client Presentation Layer]
         WebBrowser["Patient Browser (Desktop / Mobile)"]
-        VoiceWidget["WebRTC Voice Client (Opus Audio)"]
+        VoiceWidget["Voice Client (PCM over WebSocket)"]
         ChatWidget["Chat UI (Next.js 16 + React 19)"]
         ScheduleDash["Live Schedule Matrix Dashboard"]
         WebBrowser --> VoiceWidget
@@ -30,7 +30,7 @@ flowchart TB
     subgraph SecurityLayer [Edge & Security Guardrails]
         RateLimiter["Sliding Window Rate Limiter (IP Tracked)"]
         Sanitizer["Prompt Injection & Medical Guardrails"]
-        TokenIssuer["Ephemeral WebRTC Token Gate (/api/v1/voice/session)"]
+        TokenIssuer["Voice Session Gate (/api/v1/voice/session)"]
     end
 
     subgraph AppRouter [Next.js App Router API Delivery]
@@ -65,16 +65,18 @@ flowchart TB
     end
 
     subgraph CloudAPIs [External Cloud Infrastructure]
-        OpenAICloud["OpenAI Realtime / LLM API"]
+        OpenAICloud["OpenAI-compatible Voice Endpoint / LLM API"]
         GoogleCloud["Google Calendar API v3"]
+        GeminiCloud["Gemini Live API"]
         MicrosoftCloud["Microsoft Entra ID / Microsoft Graph"]
     end
 
     %% Wiring
     ChatWidget --> RateLimiter --> Sanitizer --> APIChat --> ChatOrch
-    VoiceWidget -- "1. Get Ephemeral Token" --> TokenIssuer --> APIVoiceSession --> OpenAICloud
-    VoiceWidget -- "2. Direct WebRTC Media" --> OpenAICloud
-    VoiceWidget -- "3. Tool Call via DataChannel" --> APIVoiceTools --> ApptService
+    VoiceWidget -- "1. Select provider + token (Gemini only)" --> TokenIssuer --> APIVoiceSession --> GeminiCloud
+    VoiceWidget -- "2a. Constrained WebSocket (Gemini)" --> GeminiCloud
+    VoiceWidget -- "2b. Direct WebSocket (OpenAI-compatible)" --> OpenAICloud
+    VoiceWidget -- "3. Tool Call" --> APIVoiceTools --> ApptService
     ChatOrch --> ApptService
     
     ApptService --> Repository
@@ -90,9 +92,9 @@ flowchart TB
 
 ### 2.1 Provider-Agnostic AI & Voice Integration
 
-* **Decision:** Use provider-neutral LLM and server voice contracts. The browser voice session manager delegates media and protocol handling to a transport; the OpenAI transport implements WebRTC negotiation and Realtime events.
-* **Why:** A different voice provider requires its own server and browser adapters and explicit composition, without changing the generic session manager or clinical scheduling logic. Gemini Live is the only implemented voice provider.
-* **Security Guard:** Never expose master API keys to client browsers. The server returns an ephemeral credential and public session metadata with an explicit provider discriminator; the OpenAI transport validates it before requesting microphone access.
+* **Decision:** Use provider-neutral LLM and server voice contracts. The browser voice session manager delegates media and protocol handling to a transport; each provider supplies its own server adapter and browser transport, and `DefaultVoiceTransport` picks one by asking the session route which provider is configured.
+* **Why:** A different voice provider requires its own server and browser adapters and explicit composition, without changing the generic session manager or clinical scheduling logic. Two voice providers are implemented: Gemini Live (server-minted ephemeral token over a constrained WebSocket) and any OpenAI Realtime GA-compatible endpoint (selected with `OPENAI_COMPATIBLE_VOICE_URL` when `GEMINI_API_KEY` is unset). No new dependency is needed for either: both are plain WebSocket + PCM.
+* **Security Guard:** Never expose master API keys to client browsers. With Gemini the server returns a single-use ephemeral token; with an OpenAI-compatible endpoint there is no credential to hand out, so instead the **role and tools still come from the server** in the session descriptor and the browser applies them verbatim. Either way the client cannot widen the assistant's scope or reach tools the clinic did not grant.
 
 ### 2.2 Dual-Calendar Parity (Google Calendar + Microsoft Outlook)
 
@@ -200,7 +202,7 @@ blended rate; substitute your own rate before quoting.
 | :--- | :--- | :--- |
 | Core app | Next.js App Router skeleton, chat UI, scheduling domain, calendar contracts | 8 days |
 | Calendar integration | Google + Outlook adapters, dual writes, per-provider retry state, reconciliation endpoint | 6 days |
-| Voice | OpenAI Realtime session broker, WebRTC transport, server-mediated tool calls | 4 days |
+| Voice | Gemini Live adapter + token minting, OpenAI Realtime-compatible adapter and transport, shared PCM audio plumbing, server-mediated tool calls | 4 days |
 | Admin console | Encrypted secret store, sessions, settings UI, connection tests | 4 days |
 | Safety | Prompt guardrails, input sanitizer, rate limiting, tool argument validation | 3 days |
 | Tests | Unit, contract, route, and Playwright suites (all provider calls mocked) | 5 days |
@@ -218,8 +220,8 @@ blended rate; substitute your own rate before quoting.
 
 Roughly **2.25 engineer-days per month** in steady state, before infrastructure and API spend. The
 largest recurring risk is provider API drift, which the adapter boundary confines to one file per
-provider. There is no second voice provider, so a provider migration would mean a new adapter plus a
-new browser transport; budget 3–4 days if that becomes necessary.
+provider. Voice has two implemented providers (Gemini Live and OpenAI Realtime-compatible), so adding
+a third would mean a new server adapter plus a new browser transport; budget 3–4 days per provider.
 
 ---
 
@@ -231,7 +233,7 @@ new browser transport; budget 3–4 days if that becomes necessary.
    * OpenAI (Enterprise zero-data-retention tier)
    * Cloud hosting provider (AWS or Vercel Enterprise)
    * Database provider (AWS RDS / Supabase HIPAA add-on)
-3. **Data Minimization:** Audio streams transmitted over WebRTC are ephemeral and processed in-memory. Conversations are not written to persistent storage unless explicit consent is logged.
+3. **Data Minimization:** Audio is streamed to the configured voice provider over WebSocket and processed in-memory; it is not transcribed by this application. Conversations are not written to persistent storage unless explicit consent is logged.
 
 ### 4.2 Medical Guardrails & Scope Limitation
 * **Strict Deflection:** Inquiries attempting to elicit dental diagnoses, prescription advice, antibiotic dosages, or emergency triage trigger automatic deflection:

@@ -90,8 +90,8 @@ function createSlide(pres, theme) {
   // 3 Feature Highlight Cards across the bottom
   const highlights = [
     {
-      title: "Real-Time WebRTC Voice",
-      desc: "Natural human-like voice with <300ms latency & zero master key leaks",
+      title: "Realtime Streaming Voice",
+      desc: "Natural human-like voice over WebSocket, provider-agnostic & zero master key leaks",
       stat: "24/7",
       statLabel: "Availability",
     },
