@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { OpenAIVoiceTransport } from "./openai-voice-transport";
+import { GeminiLiveTransport } from "./gemini-live-transport";
 import {
   VoiceSessionManager,
   type VoiceSessionManagerOptions,
@@ -27,7 +27,7 @@ export function useRealtimeVoice(options?: VoiceSessionManagerOptions) {
 
   useEffect(() => {
     const manager = new VoiceSessionManager({
-      transport: transport ?? new OpenAIVoiceTransport(),
+      transport: transport ?? new GeminiLiveTransport(),
       executeTool,
     });
     managerRef.current = manager;

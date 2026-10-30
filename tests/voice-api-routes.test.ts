@@ -12,31 +12,28 @@ describe("Voice API Route Handlers", () => {
       const mockVoiceProvider: VoiceProvider = {
         createSession: async (): Promise<VoiceSessionResponse> =>
           ({
-            provider: "openai-realtime",
-            sessionId: "sess_mock_123",
-            clientSecret: "ek_mock_token_456",
-            model: "gpt-4o-realtime-preview-2024-12-17",
-            voice: "alloy",
+            provider: "gemini-live",
+            sessionId: "gemini-3.8-live",
+            clientSecret: "auth_tokens/mock-456",
+            model: "gemini-3.8-live",
+            voice: "Aoede",
             expiresAt: 1730000000,
             masterKey: "dummy-secret-not-for-client",
           }) as VoiceSessionResponse,
       };
 
       const handler = createVoiceSessionHandler({ voiceProvider: mockVoiceProvider });
-      const request = new Request("http://localhost/api/v1/voice/session", {
-        method: "POST",
-      });
 
-      const response = await handler(request);
+      const response = await handler();
       expect(response.status).toBe(200);
 
       const json = await response.json();
       expect(json.success).toBe(true);
       expect(response.headers.get("cache-control")).toBe("no-store");
-      expect(json.data.provider).toBe("openai-realtime");
+      expect(json.data.provider).toBe("gemini-live");
       expect(json.data.masterKey).toBeUndefined();
-      expect(json.data.sessionId).toBe("sess_mock_123");
-      expect(json.data.clientSecret).toBe("ek_mock_token_456");
+      expect(json.data.sessionId).toBe("gemini-3.8-live");
+      expect(json.data.clientSecret).toBe("auth_tokens/mock-456");
     });
 
     it("returns error status when voice provider fails", async () => {
@@ -47,11 +44,8 @@ describe("Voice API Route Handlers", () => {
       };
 
       const handler = createVoiceSessionHandler({ voiceProvider: mockVoiceProvider });
-      const request = new Request("http://localhost/api/v1/voice/session", {
-        method: "POST",
-      });
 
-      const response = await handler(request);
+      const response = await handler();
       expect(response.status).toBe(500);
 
       const json = await response.json();

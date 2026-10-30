@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { OpenAIRealtimeAdapter } from "@/providers/voice/openai-realtime-adapter";
-import { getRuntimeOpenAiApiKey } from "@/services/runtime-config";
+import { GeminiLiveAdapter } from "@/providers/voice/gemini-live-adapter";
+import { getGeminiLiveConfig } from "@/config/gemini-live";
 import type { VoiceProvider } from "@/providers/voice/voice-provider";
 
 export type VoiceSessionRouteDeps = {
@@ -10,10 +10,10 @@ export type VoiceSessionRouteDeps = {
 const GENERIC_ERROR = "Internal server error";
 
 export function createVoiceSessionHandler(deps: VoiceSessionRouteDeps = {}) {
-  return async function POST(_request: Request): Promise<Response> {
+  return async function POST(): Promise<Response> {
     try {
       const voiceProvider =
-        deps.voiceProvider ?? new OpenAIRealtimeAdapter({ apiKey: await getRuntimeOpenAiApiKey() });
+        deps.voiceProvider ?? new GeminiLiveAdapter(getGeminiLiveConfig(process.env));
 
       const session = await voiceProvider.createSession();
       const { provider, sessionId, clientSecret, model, voice, expiresAt } = session;

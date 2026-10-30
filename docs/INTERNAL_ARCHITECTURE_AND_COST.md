@@ -91,7 +91,7 @@ flowchart TB
 ### 2.1 Provider-Agnostic AI & Voice Integration
 
 * **Decision:** Use provider-neutral LLM and server voice contracts. The browser voice session manager delegates media and protocol handling to a transport; the OpenAI transport implements WebRTC negotiation and Realtime events.
-* **Why:** A different voice provider requires its own server and browser adapters and explicit composition, without changing the generic session manager or clinical scheduling logic. OpenAI Realtime is the only implemented voice provider.
+* **Why:** A different voice provider requires its own server and browser adapters and explicit composition, without changing the generic session manager or clinical scheduling logic. Gemini Live is the only implemented voice provider.
 * **Security Guard:** Never expose master API keys to client browsers. The server returns an ephemeral credential and public session metadata with an explicit provider discriminator; the OpenAI transport validates it before requesting microphone access.
 
 ### 2.2 Dual-Calendar Parity (Google Calendar + Microsoft Outlook)
@@ -133,12 +133,12 @@ To provide a concrete, realistic financial forecast for an active dental clinic,
 
 ### 3.2 Itemized Monthly Cost Breakdown
 
-#### A. Conversational Voice AI (OpenAI Realtime API / WebRTC)
-*Audio inputs and outputs billed per minute / token equivalent (rates as of Q3/Q4 2026):*
+#### A. Conversational Voice AI (Gemini Live API)
+*Illustrative estimate using OpenAI Realtime per-minute rates as a stand-in; replace with current Gemini Live pricing before quoting:*
 * **Realtime Audio Input:** $0.06 / minute × 3,000 minutes = **$180.00**
 * **Realtime Audio Output:** $0.24 / minute × 1,500 minutes (assistant speaks ~50% of call time) = **$360.00**
 * **Text Tokens (Function Calling / Context):** ~1.5M tokens/mo = **$15.00**
-* *Subtotal Voice:* **$555.00 / month**
+* *Subtotal Voice:* **$555.00 / month (illustrative)**
 
 #### B. Text Chat AI (GPT-4o-mini / Claude 3.5 Haiku)
 *Text conversational model with prompt caching:*

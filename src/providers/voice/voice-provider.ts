@@ -1,23 +1,7 @@
-export type VoiceSessionConfig = {
-  model: string;
-  voice: string;
-  modalities: Array<"text" | "audio">;
-  instructions: string;
-  tools?: unknown[];
-  temperature?: number;
-  inputAudioTranscription?: {
-    model: string;
-  };
-  turnDetection?: {
-    type: "server_vad";
-    threshold?: number;
-    prefixPaddingMs?: number;
-    silenceDurationMs?: number;
-  } | null;
-};
+export type VoiceProviderId = "gemini-live" | "openai-realtime";
 
 export type VoiceSessionResponse = {
-  provider: "openai-realtime";
+  provider: VoiceProviderId;
   sessionId: string;
   clientSecret: string;
   model: string;
@@ -26,7 +10,7 @@ export type VoiceSessionResponse = {
 };
 
 export type VoiceProvider = {
-  createSession(customConfig?: Partial<VoiceSessionConfig>): Promise<VoiceSessionResponse>;
+  createSession(): Promise<VoiceSessionResponse>;
 };
 
 export class VoiceProviderError extends Error {
