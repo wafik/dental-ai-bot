@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+import { OUTPUT_SAMPLE_RATE } from "../src/features/voice/audio";
 import { OpenAICompatibleTransport } from "../src/features/voice/openai-compatible-transport";
 import type { VoiceTransportEvents } from "../src/features/voice/voice-transport";
 
@@ -161,6 +162,17 @@ describe("OpenAICompatibleTransport", () => {
     expect(update.session.instructions).toBe(INSTRUCTIONS);
     expect(update.session.tools).toEqual(TOOLS);
     expect(update.session.audio.input.turn_detection.type).toBe("server_vad");
+  });
+
+  it("declares the PCM output rate it plays audio at", async () => {
+    const { socket } = await connectReady();
+
+    // Undeclared, a self-hosted 16 kHz pipeline is played at the client's
+    // 24 kHz rate and sounds 1.5x too fast.
+    expect(first(socket.parsed()).session.audio.output.format).toEqual({
+      type: "audio/pcm",
+      rate: OUTPUT_SAMPLE_RATE,
+    });
   });
 
   it("streams microphone audio as 20 ms input_audio_buffer.append frames", async () => {

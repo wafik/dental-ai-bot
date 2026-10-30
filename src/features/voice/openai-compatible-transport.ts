@@ -1,4 +1,10 @@
-import { PcmPlayer, readFrame, startMicrophone, type MicrophoneCapture } from "./audio";
+import {
+  OUTPUT_SAMPLE_RATE,
+  PcmPlayer,
+  readFrame,
+  startMicrophone,
+  type MicrophoneCapture,
+} from "./audio";
 import type { VoiceTransport, VoiceTransportEvents } from "./voice-transport";
 
 const CHUNK_SAMPLES = 320; // 20 ms at 16 kHz
@@ -92,6 +98,11 @@ export class OpenAICompatibleTransport implements VoiceTransport {
       socket.onopen = () => {
         // The endpoint has no server-side token, so the role and tools sent here
         // are the server's own descriptor rather than a client copy.
+        // Output rate is declared because the server's schema defaults to 24 kHz
+        // while a self-hosted pipeline may natively speak 16 kHz; an undeclared
+        // client plays whatever arrives at its own rate (1.5x too fast). Input is
+        // left at the server default: `toPcm16` already emits its native 16 kHz,
+        // and not every compatible server accepts an input format field.
         socket.send(
           JSON.stringify({
             type: "session.update",
@@ -99,7 +110,12 @@ export class OpenAICompatibleTransport implements VoiceTransport {
               type: "realtime",
               instructions: typeof session.instructions === "string" ? session.instructions : "",
               tools: Array.isArray(session.tools) ? session.tools : [],
-              audio: { input: { turn_detection: { type: "server_vad" } } },
+              audio: {
+                input: { turn_detection: { type: "server_vad" } },
+                output: {
+                  format: { type: "audio/pcm", rate: OUTPUT_SAMPLE_RATE },
+                },
+              },
             },
           }),
         );

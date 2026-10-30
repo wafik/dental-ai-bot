@@ -1,9 +1,16 @@
+/** Rate this client captures and sends microphone audio at. */
 const INPUT_SAMPLE_RATE = 16_000;
-const OUTPUT_SAMPLE_RATE = 24_000;
 
 /**
- * Plays streamed 24 kHz PCM chunks back to back. Each chunk is buffered until
- * the first one starts, so consecutive chunks never overlap or gap.
+ * Rate this player interprets incoming PCM at. A transport able to negotiate
+ * the rate must declare exactly this to the server: 16 kHz frames played at
+ * 24 kHz run 1.5x fast.
+ */
+export const OUTPUT_SAMPLE_RATE = 24_000;
+
+/**
+ * Plays streamed PCM chunks back to back. Each chunk is buffered until the
+ * first one starts, so consecutive chunks never overlap or gap.
  */
 export class PcmPlayer {
   private context: AudioContext | null = null;

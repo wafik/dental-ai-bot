@@ -279,6 +279,15 @@ for reference.
 * [docs/EXTERNAL_CLIENT_GUIDE.md](docs/EXTERNAL_CLIENT_GUIDE.md) — Non-technical practice manager guide, Google/Outlook connection steps, and FAQ.
 * [docs/CALENDAR_SETUP.md](docs/CALENDAR_SETUP.md) — Cloud OAuth setup for Google Cloud Platform and Microsoft Entra ID.
 
+### Downloadable Deliverables
+
+These are pre-rendered from the HTML sources above and regenerated with `bun run build:pdf` and
+`bun run build:slides`:
+
+* [BrightSmile_Dental_AI_Executive_Summary.pdf](docs/BrightSmile_Dental_AI_Executive_Summary.pdf) — 2-page non-technical brief (source: [HTML](docs/BrightSmile_Dental_AI_Executive_Summary.html)).
+* [BrightSmile_Dental_AI_Technical_Spec.pdf](docs/BrightSmile_Dental_AI_Technical_Spec.pdf) — 2-page engineering spec (source: [HTML](docs/BrightSmile_Dental_AI_Technical_Spec.html)).
+* [BrightSmile_Dental_AI_Presentation.pptx](docs/BrightSmile_Dental_AI_Presentation.pptx) — 8-slide deck (source: `slides/compile.js`).
+
 ---
 
 ## ⚖️ License
