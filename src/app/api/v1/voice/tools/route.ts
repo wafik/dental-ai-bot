@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { SlidingWindowRateLimiter } from "@/safety/rate-limiter";
 import { AppointmentService } from "@/services/appointment-service";
 import { executeAppointmentTool } from "@/services/appointment-tools";
 import { getRuntimeCalendarProvider } from "@/services/calendar-provider-cache";
@@ -6,9 +7,16 @@ import { getRuntimeAppointmentRepository } from "@/repository/runtime-repositori
 
 export type VoiceToolsRouteDeps = {
   appointmentService?: AppointmentService;
+  rateLimiter?: SlidingWindowRateLimiter;
 };
 
 const GENERIC_ERROR = "Internal server error";
+
+/** Booking and cancellation are writes, so the budget is tighter than chat. */
+const defaultLimiter = new SlidingWindowRateLimiter({
+  maxRequests: 20,
+  windowMs: 60000,
+});
 
 /**
  * Builds the appointment service per request so calendar provider settings and
@@ -20,8 +28,21 @@ async function buildRuntimeAppointmentService(): Promise<AppointmentService> {
 }
 
 export function createVoiceToolsHandler(deps: VoiceToolsRouteDeps = {}) {
+  const limiter = deps.rateLimiter ?? defaultLimiter;
+
   return async function POST(request: Request): Promise<Response> {
     try {
+      const clientIp = request.headers.get("x-forwarded-for") || "client-local";
+      if (!limiter.check(clientIp).allowed) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: "Too many requests. Please wait a moment before trying again.",
+          },
+          { status: 429 },
+        );
+      }
+
       const body = await request.json();
       const toolName = body?.toolName;
       const toolArgs = body?.arguments || {};

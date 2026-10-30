@@ -58,7 +58,26 @@ describe("Appointments API Route Handlers", () => {
       expect(json.success).toBe(true);
       expect(json.date).toBe("2026-10-28");
       expect(json.appointments.length).toBeGreaterThanOrEqual(1);
-      expect(json.appointments[0].patientName).toBe("John Doe");
+      expect(json.appointments[0].startTime).toBe("09:00");
+    });
+
+    it("never exposes patient identity on the public listing", async () => {
+      await service.bookAppointment({
+        serviceCode: "A",
+        dentistId: "junior",
+        date: "2026-10-29",
+        startTime: "09:00",
+        patientName: "Private Patient",
+        patientPhone: "+628999888777",
+      });
+
+      const res = await GET(new Request("http://localhost/api/v1/appointments?date=2026-10-29"));
+      const text = await res.text();
+
+      expect(text).not.toContain("Private Patient");
+      expect(text).not.toContain("+628999888777");
+      expect(text).not.toContain("patientName");
+      expect(text).not.toContain("patientPhone");
     });
 
     it("hides pending and failed reservations from the public listing", async () => {

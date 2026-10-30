@@ -10,7 +10,17 @@ import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { collectFieldErrors, scheduleDateSchema } from "@/utils/form-validation";
 import { AlertTriangle, CalendarDays, Clock, RefreshCw, ShieldCheck } from "lucide-react";
-import type { AppointmentRecord } from "@/domain/appointment";
+
+/** The public schedule board intentionally receives no patient identity. */
+type PublicAppointment = {
+  id: string;
+  serviceCode: string;
+  dentistId: string;
+  date: string;
+  startTime: string;
+  endTime: string;
+  status: string;
+};
 
 export type SchedulePreviewProps = {
   initialDate?: string;
@@ -53,7 +63,7 @@ function toLabel(minutes: number): string {
 }
 
 /** Clamps an appointment to clinic hours and converts it to track geometry. */
-function blockGeometry(appointment: AppointmentRecord) {
+function blockGeometry(appointment: PublicAppointment) {
   const start = Math.max(toMinutes(appointment.startTime), DAY_START_MINUTES);
   const end = Math.min(toMinutes(appointment.endTime), DAY_END_MINUTES);
   const left = ((start - DAY_START_MINUTES) / TOTAL_MINUTES) * 100;
@@ -62,7 +72,7 @@ function blockGeometry(appointment: AppointmentRecord) {
 }
 
 /** Counts distinct 30-min grid cells covered by any active booking. */
-function bookedSlotCount(appointments: AppointmentRecord[]): number {
+function bookedSlotCount(appointments: PublicAppointment[]): number {
   let covered = 0;
   for (let index = 0; index < TOTAL_SLOTS; index += 1) {
     const slotStart = DAY_START_MINUTES + index * SLOT_MINUTES;
@@ -91,7 +101,7 @@ export function SchedulePreview({ initialDate }: SchedulePreviewProps) {
   const [selectedDate, setSelectedDate] = useState<string>(
     initialDate || new Date().toISOString().split("T")[0] || "2026-10-28",
   );
-  const [appointments, setAppointments] = useState<AppointmentRecord[]>([]);
+  const [appointments, setAppointments] = useState<PublicAppointment[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -281,7 +291,7 @@ export function SchedulePreview({ initialDate }: SchedulePreviewProps) {
                             return (
                               <div
                                 key={appointment.id}
-                                title={`${appointment.startTime}–${appointment.endTime} · ${serviceName} · ${appointment.patientName}`}
+                                title={`${appointment.startTime}–${appointment.endTime} · ${serviceName}`}
                                 className="absolute inset-y-1 flex flex-col justify-center gap-0.5 overflow-hidden rounded border border-primary/25 bg-primary/10 px-1.5 pl-2.5 before:absolute before:inset-y-0 before:left-0 before:w-[3px] before:bg-primary before:content-['']"
                                 style={{ left: `${left}%`, width: `${width}%` }}
                               >

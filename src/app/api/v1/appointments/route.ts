@@ -60,12 +60,23 @@ export function createAppointmentsHandlers(deps: AppointmentsRouteDeps = {}) {
         status: "confirmed",
       });
 
+      // This endpoint is unauthenticated and feeds the public schedule board, so
+      // patient identity never leaves the server. Only what the board renders is
+      // returned.
       return NextResponse.json(
         {
           success: true,
           date: dateParam,
           totalConfirmed: appointments.length,
-          appointments,
+          appointments: appointments.map((appointment) => ({
+            id: appointment.id,
+            serviceCode: appointment.serviceCode,
+            dentistId: appointment.dentistId,
+            date: appointment.date,
+            startTime: appointment.startTime,
+            endTime: appointment.endTime,
+            status: appointment.status,
+          })),
         },
         { status: 200 },
       );

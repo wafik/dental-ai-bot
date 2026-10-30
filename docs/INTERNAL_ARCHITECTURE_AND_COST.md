@@ -188,12 +188,45 @@ To provide a concrete, realistic financial forecast for an active dental clinic,
 *Comparison with Human Staffing:*  
 A full-time dental receptionist in the US/UK costs between $3,000 and $4,500/month for 40 hours/week. The AI solution operates **24/7/365 with zero hold times, handles concurrent callers, and costs less than 20% of a single human receptionist.**
 
+### 3.4 Build and Maintenance Cost
+
+*Illustrative planning estimates, not verified operating figures.* They assume a single
+forward-deployed engineer building on the shipped codebase and are stated in engineering days at a
+blended rate; substitute your own rate before quoting.
+
+**Build cost (one-time)**
+
+| Phase | Scope | Estimate |
+| :--- | :--- | :--- |
+| Core app | Next.js App Router skeleton, chat UI, scheduling domain, calendar contracts | 8 days |
+| Calendar integration | Google + Outlook adapters, dual writes, per-provider retry state, reconciliation endpoint | 6 days |
+| Voice | OpenAI Realtime session broker, WebRTC transport, server-mediated tool calls | 4 days |
+| Admin console | Encrypted secret store, sessions, settings UI, connection tests | 4 days |
+| Safety | Prompt guardrails, input sanitizer, rate limiting, tool argument validation | 3 days |
+| Tests | Unit, contract, route, and Playwright suites (all provider calls mocked) | 5 days |
+| Documentation | Internal + external guides | 2 days |
+| **Total** | | **~32 engineer-days** |
+
+**Ongoing maintenance**
+
+| Activity | Cadence | Estimate |
+| :--- | :--- | :--- |
+| Dependency and security patching | Monthly | 0.5 day/month |
+| Provider API changes (Google, Graph, OpenAI) | As announced | 0.25 day/month amortized |
+| Reconciliation review | Per the retry endpoint's `needs_manual_reconciliation` count | 0.5 day/month at the modeled volume |
+| Incident response | As needed | 1 day/month reserved |
+
+Roughly **2.25 engineer-days per month** in steady state, before infrastructure and API spend. The
+largest recurring risk is provider API drift, which the adapter boundary confines to one file per
+provider. There is no second voice provider, so a provider migration would mean a new adapter plus a
+new browser transport; budget 3–4 days if that becomes necessary.
+
 ---
 
 ## 4. Security, Compliance & Patient Privacy
 
 ### 4.1 HIPAA & GDPR Alignment
-1. **Zero Secret Leakage:** Master API keys, OAuth client secrets, and refresh tokens are stored exclusively in server environment variables and never exposed to the client bundle.
+1. **Zero Secret Leakage:** Credentials are never sent to the client bundle. They are either encrypted at rest in `encrypted_secrets` (AES-256-GCM, managed through the admin console) or supplied as server-side environment variables for bootstrap. Admin APIs return only `isConfigured` metadata and never the stored value; secret inputs are write-only.
 2. **Business Associate Agreements (BAA):** For clinical HIPAA compliance, clinic deployments must execute an enterprise BAA with:
    * OpenAI (Enterprise zero-data-retention tier)
    * Cloud hosting provider (AWS or Vercel Enterprise)

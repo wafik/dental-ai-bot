@@ -3,6 +3,7 @@ import { InMemoryAppointmentRepository } from "../src/repository/in-memory-appoi
 import { AppointmentService } from "../src/services/appointment-service";
 import { createVoiceSessionHandler } from "../src/app/api/v1/voice/session/route";
 import { createVoiceToolsHandler } from "../src/app/api/v1/voice/tools/route";
+import { SlidingWindowRateLimiter } from "../src/safety/rate-limiter";
 import type { VoiceProvider, VoiceSessionResponse } from "../src/providers/voice/voice-provider";
 
 describe("Voice API Route Handlers", () => {
@@ -170,6 +171,26 @@ describe("Voice API Route Handlers", () => {
       expect(json.success).toBe(true);
       expect(json.result.success).toBe(true);
       expect(json.result.appointment.status).toBe("confirmed");
+    });
+
+    it("rate-limits repeated tool calls", async () => {
+      const limiter = new SlidingWindowRateLimiter({ maxRequests: 1, windowMs: 60_000 });
+      const limitedHandler = createVoiceToolsHandler({
+        appointmentService: service,
+        rateLimiter: limiter,
+      });
+
+      const call = () =>
+        limitedHandler(
+          new Request("http://localhost/api/v1/voice/tools", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "x-forwarded-for": "203.0.113.7" },
+            body: JSON.stringify({ toolName: "list_services", arguments: {} }),
+          }),
+        );
+
+      expect((await call()).status).toBe(200);
+      expect((await call()).status).toBe(429);
     });
   });
 });
