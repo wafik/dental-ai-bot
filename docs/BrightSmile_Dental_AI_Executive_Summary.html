@@ -2,17 +2,10 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>BrightSmile Dental AI Platform - Architectural Brief & Operational Analysis</title>
+  <title>BrightSmile Dental AI Platform - Architectural Brief</title>
   <style>
-    @page {
-      size: A4 portrait;
-      margin: 0;
-    }
-    *, *::before, *::after {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
-    }
+    @page { size: A4 portrait; margin: 0; }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body {
       font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
       color: #27272a;
@@ -25,207 +18,75 @@
       width: 210mm;
       height: 297mm;
       max-height: 297mm;
-      padding: 13mm 14mm 12mm 14mm;
+      padding: 12mm 14mm 10mm 14mm;
       position: relative;
       background: #ffffff;
       overflow: hidden;
       page-break-after: always;
       display: flex;
       flex-direction: column;
-      justify-content: space-between;
     }
-    .page:last-child {
-      page-break-after: avoid;
-    }
+    .page:last-child { page-break-after: avoid; }
 
-    /* Typography */
-    .title-h1 {
-      font-size: 20pt;
-      font-weight: 700;
-      letter-spacing: -0.03em;
-      color: #09090b;
-      line-height: 1.15;
-    }
-    .subtitle-p {
-      font-size: 9pt;
-      color: #52525b;
-      margin-top: 3px;
-      line-height: 1.4;
-      font-weight: 400;
-    }
+    .title-h1 { font-size: 19pt; font-weight: 700; letter-spacing: -0.03em; color: #09090b; line-height: 1.15; }
+    .subtitle-p { font-size: 8.6pt; color: #52525b; margin-top: 3px; line-height: 1.4; }
+
     .section-header {
-      margin-top: 10px;
-      margin-bottom: 6px;
-      display: flex;
-      align-items: baseline;
-      justify-content: space-between;
-      border-bottom: 1px solid #e4e4e7;
-      padding-bottom: 4px;
+      display: flex; align-items: baseline; justify-content: space-between;
+      border-bottom: 1px solid #e4e4e7; padding-bottom: 4px;
+      margin: 9px 0 6px 0;
     }
-    .section-title {
-      font-size: 10.5pt;
-      font-weight: 600;
-      letter-spacing: -0.01em;
-      color: #18181b;
-    }
-    .section-sub {
-      font-size: 7pt;
-      color: #71717a;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-      font-weight: 500;
-    }
-    p, li {
-      font-size: 8pt;
-      line-height: 1.45;
-      color: #3f3f46;
-    }
+    .section-title { font-size: 10pt; font-weight: 600; letter-spacing: -0.01em; color: #18181b; }
+    .section-sub { font-size: 6.8pt; color: #71717a; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 500; }
 
-    /* Cards & Containers - Ultra Minimal 1px border */
-    .panel {
-      background: #ffffff;
-      border: 1px solid #e4e4e7;
-      border-radius: 6px;
-      padding: 9px 11px;
-    }
-    .panel-muted {
-      background: #fafafa;
-      border: 1px solid #e4e4e7;
-      border-radius: 6px;
-      padding: 9px 11px;
-    }
-    .row {
-      display: flex;
-      gap: 10px;
-    }
-    .col {
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-    }
+    p, li { font-size: 7.8pt; line-height: 1.45; color: #3f3f46; }
 
-    /* Muted Pastels & Tags */
-    .tag {
-      display: inline-block;
-      font-size: 6.8pt;
-      font-weight: 500;
-      padding: 1.5px 6px;
-      border-radius: 4px;
-      letter-spacing: 0.02em;
-    }
+    .panel { background: #ffffff; border: 1px solid #e4e4e7; border-radius: 6px; padding: 8px 10px; }
+    .panel-muted { background: #fafafa; border: 1px solid #e4e4e7; border-radius: 6px; padding: 8px 10px; }
+    .row { display: flex; gap: 9px; }
+    .col { flex: 1; display: flex; flex-direction: column; }
+
+    .tag { display: inline-block; font-size: 6.6pt; font-weight: 500; padding: 1.5px 6px; border-radius: 4px; letter-spacing: 0.02em; }
     .tag-neutral { background: #f4f4f5; color: #52525b; }
     .tag-blue { background: #f0f7ff; color: #1e40af; border: 1px solid #dbeafe; }
     .tag-green { background: #f0fdf4; color: #166534; border: 1px solid #dcfce7; }
     .tag-warm { background: #fefce8; color: #854d0e; border: 1px solid #fef08a; }
     .tag-rose { background: #fff1f2; color: #9f1239; border: 1px solid #ffe4e6; }
 
-    /* Tables */
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      font-size: 7.6pt;
-    }
+    table { width: 100%; border-collapse: collapse; font-size: 7.3pt; }
     th {
-      font-weight: 600;
-      color: #71717a;
-      text-align: left;
-      padding: 5px 8px;
-      border-bottom: 1px solid #e4e4e7;
-      font-size: 7pt;
-      text-transform: uppercase;
-      letter-spacing: 0.04em;
+      font-weight: 600; color: #71717a; text-align: left; padding: 4px 7px;
+      border-bottom: 1px solid #e4e4e7; font-size: 6.8pt;
+      text-transform: uppercase; letter-spacing: 0.04em;
     }
-    td {
-      padding: 5px 8px;
-      border-bottom: 1px solid #f4f4f5;
-      color: #3f3f46;
-      vertical-align: middle;
-    }
-    tr:last-child td {
-      border-bottom: none;
-    }
+    td { padding: 4px 7px; border-bottom: 1px solid #f4f4f5; color: #3f3f46; vertical-align: middle; }
+    tr:last-child td { border-bottom: none; }
     .text-right { text-align: right; }
     .text-center { text-align: center; }
 
-    /* Pipeline Step */
-    .pipeline-step {
-      flex: 1;
-      border: 1px solid #e4e4e7;
-      border-radius: 6px;
-      padding: 8px 9px;
-      background: #ffffff;
-      position: relative;
-    }
-    .pipeline-number {
-      font-size: 7pt;
-      font-weight: 600;
-      color: #71717a;
-      margin-bottom: 2px;
-      letter-spacing: 0.04em;
-      text-transform: uppercase;
-    }
-    .pipeline-title {
-      font-size: 8.5pt;
-      font-weight: 600;
-      color: #09090b;
-      margin-bottom: 4px;
-    }
+    .pipeline-step { flex: 1; border: 1px solid #e4e4e7; border-radius: 6px; padding: 7px 8px; background: #ffffff; }
+    .pipeline-number { font-size: 6.6pt; font-weight: 600; color: #71717a; margin-bottom: 2px; letter-spacing: 0.04em; text-transform: uppercase; }
+    .pipeline-title { font-size: 8.2pt; font-weight: 600; color: #09090b; margin-bottom: 3px; }
 
-    /* Metric Box */
-    .metric-card {
-      flex: 1;
-      padding: 8px 10px;
-      border: 1px solid #e4e4e7;
-      border-radius: 6px;
-      background: #fafafa;
-    }
-    .metric-val {
-      font-size: 15pt;
-      font-weight: 700;
-      color: #18181b;
-      letter-spacing: -0.02em;
-      line-height: 1.1;
-    }
-    .metric-label {
-      font-size: 6.8pt;
-      color: #71717a;
-      margin-top: 3px;
-      font-weight: 500;
-      text-transform: uppercase;
-      letter-spacing: 0.03em;
-    }
+    .metric-card { flex: 1; padding: 7px 9px; border: 1px solid #e4e4e7; border-radius: 6px; background: #fafafa; }
+    .metric-val { font-size: 13pt; font-weight: 700; color: #18181b; letter-spacing: -0.02em; line-height: 1.1; }
+    .metric-label { font-size: 6.6pt; color: #71717a; margin-top: 2px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.03em; }
 
-    /* Header & Footer */
-    .doc-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: flex-start;
-      border-bottom: 1px solid #e4e4e7;
-      padding-bottom: 8px;
-      margin-bottom: 9px;
-    }
-    .doc-meta {
-      text-align: right;
-      font-size: 7pt;
-      color: #71717a;
-      line-height: 1.5;
-    }
+    .doc-header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 1px solid #e4e4e7; padding-bottom: 7px; }
+    .doc-meta { text-align: right; font-size: 6.8pt; color: #71717a; line-height: 1.5; }
     .doc-footer {
-      border-top: 1px solid #e4e4e7;
-      padding-top: 6px;
-      margin-top: 8px;
-      display: flex;
-      justify-content: space-between;
-      font-size: 6.8pt;
-      color: #71717a;
+      border-top: 1px solid #e4e4e7; padding-top: 5px; margin-top: auto;
+      display: flex; justify-content: space-between; font-size: 6.6pt; color: #71717a;
     }
     code {
       font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-      font-size: 7.2pt;
-      background: #f4f4f5;
-      padding: 1px 4px;
-      border-radius: 3px;
-      color: #18181b;
+      font-size: 7pt; background: #f4f4f5; padding: 1px 4px; border-radius: 3px; color: #18181b;
+    }
+    figure.flow { border: 1px solid #e4e4e7; border-radius: 6px; overflow: hidden; background: #fff; }
+    figure.flow img { display: block; width: 100%; height: auto; }
+    figure.flow figcaption {
+      font-size: 6.8pt; color: #71717a; padding: 5px 9px; border-top: 1px solid #f4f4f5;
+      line-height: 1.4;
     }
   </style>
 </head>
@@ -233,415 +94,323 @@
 
   <!-- ==================== PAGE 1 ==================== -->
   <div class="page">
-    <div style="flex: 1; display: flex; flex-direction: column; justify-content: space-between;">
-
-      <!-- Document Header -->
+    <div class="doc-header">
       <div>
-        <div class="doc-header">
-          <div>
-            <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 3px;">
-              <span class="tag tag-neutral">TECHNICAL REPORT &amp; ARCHITECTURE BRIEF</span>
-              <span class="tag tag-green">IMPLEMENTATION OVERVIEW</span>
-            </div>
-            <h1 class="title-h1">BrightSmile Dental AI Platform</h1>
-            <p class="subtitle-p">
-              Architecture review, clinical qualification gating, and real-time appointment synchronization.
-            </p>
-          </div>
-          <div class="doc-meta">
-            <div><strong style="color: #18181b;">Page 1 of 2</strong></div>
-            <div>Engineering &amp; Governance</div>
-            <div>Runtime: Bun &bull; Next.js 16 &bull; React 19</div>
-          </div>
+        <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 3px;">
+          <span class="tag tag-neutral">ARCHITECTURE BRIEF</span>
+          <span class="tag tag-green">IMPLEMENTATION OVERVIEW</span>
         </div>
-
-        <!-- Key Engineering Benchmarks -->
-        <div class="row" style="margin-bottom: 4px;">
-          <div class="metric-card">
-            <div class="metric-val">&lt; 300 ms</div>
-            <div class="metric-label">Voice Response Latency (modeled target)</div>
-          </div>
-          <div class="metric-card">
-            <div class="metric-val">99.8%</div>
-            <div class="metric-label">Inbound Call Coverage</div>
-          </div>
-          <div class="metric-card">
-            <div class="metric-val">100%</div>
-            <div class="metric-label">Deterministic Rule Gating</div>
-          </div>
-          <div class="metric-card">
-            <div class="metric-val">$34,811</div>
-            <div class="metric-label">Net Annual Clinic Savings</div>
-          </div>
-        </div>
+        <h1 class="title-h1">BrightSmile Dental AI Platform</h1>
+        <p class="subtitle-p">
+          Conversational voice and chat scheduling, clinical qualification gating, and dual-calendar
+          synchronization — with the voice provider chosen by configuration, not hardcoded.
+        </p>
       </div>
-
-      <!-- Chapter 1: End-to-End Processing Pipeline -->
-      <div>
-        <div class="section-header">
-          <span class="section-title">End-to-End System Processing Pipeline</span>
-          <span class="section-sub">Inbound to Calendar Settlement</span>
-        </div>
-        <div class="row" style="align-items: stretch; margin-bottom: 6px;">
-          <div class="pipeline-step">
-            <div class="pipeline-number">Step 01 &bull; Inbound</div>
-            <div class="pipeline-title">Patient Engagement</div>
-            <p>Patients connect through natural voice streamed over WebSocket or interactive chat, communicating concerns in everyday language.</p>
-          </div>
-          <div class="pipeline-step">
-            <div class="pipeline-number">Step 02 &bull; Perimeter</div>
-            <div class="pipeline-title">Edge Guardrails</div>
-            <p>Pre-LLM sanitizers screen prompt injection attempts and medical diagnosis queries before token generation begins.</p>
-          </div>
-          <div class="pipeline-step">
-            <div class="pipeline-number">Step 03 &bull; Gateway</div>
-            <div class="pipeline-title">Session Broker</div>
-            <p>Next.js server brokers ephemeral tokens (&lt;60s lifetime). Client audio streams peer-to-peer without exposing core credentials.</p>
-          </div>
-          <div class="pipeline-step">
-            <div class="pipeline-number">Step 04 &bull; Domain</div>
-            <div class="pipeline-title">Clinical Engine</div>
-            <p>Authoritative TypeScript business rules match patient requests against practitioner credential tiers and operating limits.</p>
-          </div>
-          <div class="pipeline-step">
-            <div class="pipeline-number">Step 05 &bull; Storage</div>
-            <div class="pipeline-title">Atomic Commit</div>
-            <p>PostgreSQL advisory transaction locks coordinate bookings per dentist and date. One selected calendar provider receives each booking; external edits are not locked.</p>
-          </div>
-        </div>
+      <div class="doc-meta">
+        <div><strong style="color: #18181b;">Page 1 of 2</strong></div>
+        <div>Engineering &amp; Governance</div>
+        <div>Bun &bull; Next.js 16 &bull; React 19</div>
       </div>
-
-      <!-- Chapter 2: Clinical Qualification & Doctor Scope Matrix -->
-      <div>
-        <div class="section-header">
-          <span class="section-title">Practitioner Credential Tiers &amp; Clinical Scope</span>
-          <span class="section-sub">Hard Boundary Rule Matrix</span>
-        </div>
-        <div class="row" style="gap: 12px; margin-bottom: 6px;">
-          <div class="panel" style="flex: 1.6; padding: 0; overflow: hidden;">
-            <table>
-              <thead>
-                <tr>
-                  <th style="width: 32%;">Clinical Procedure</th>
-                  <th style="width: 18%;" class="text-center">Duration</th>
-                  <th style="width: 25%;">Dr. Junior (General)</th>
-                  <th style="width: 25%;">Dr. Senior 1 &amp; 2 (Specialist)</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td><strong>Routine Teeth Cleaning</strong></td>
-                  <td class="text-center"><span class="tag tag-neutral">30 min</span></td>
-                  <td><span class="tag tag-green">Permitted</span> Standard Care</td>
-                  <td><span class="tag tag-green">Permitted</span> Specialist Overseen</td>
-                </tr>
-                <tr>
-                  <td><strong>Laser Teeth Whitening</strong></td>
-                  <td class="text-center"><span class="tag tag-neutral">45 min</span></td>
-                  <td><span class="tag tag-green">Permitted</span> Cosmetic</td>
-                  <td><span class="tag tag-green">Permitted</span> Full Scope</td>
-                </tr>
-                <tr>
-                  <td><strong>Root Canal Treatment</strong></td>
-                  <td class="text-center"><span class="tag tag-neutral">90 min</span></td>
-                  <td><span class="tag tag-rose">Restricted</span> Endodontic</td>
-                  <td><span class="tag tag-green">Permitted</span> Primary Specialist</td>
-                </tr>
-                <tr>
-                  <td><strong>Wisdom Tooth Extraction</strong></td>
-                  <td class="text-center"><span class="tag tag-neutral">60 min</span></td>
-                  <td><span class="tag tag-rose">Restricted</span> Surgical</td>
-                  <td><span class="tag tag-green">Permitted</span> Oral Surgery Lead</td>
-                </tr>
-                <tr>
-                  <td><strong>Full Mouth Reconstruction</strong></td>
-                  <td class="text-center"><span class="tag tag-neutral">120 min</span></td>
-                  <td><span class="tag tag-rose">Restricted</span> Surgical</td>
-                  <td><span class="tag tag-green">Permitted</span> Surgical Lead</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-
-          <div class="col" style="flex: 1; gap: 7px;">
-            <div class="panel-muted" style="border-left: 2px solid #27272a;">
-              <div style="font-weight: 600; font-size: 7.8pt; color: #18181b; margin-bottom: 2px;">
-                Deterministic Scope Enforcement
-              </div>
-              <p style="font-size: 7.2pt; color: #52525b; line-height: 1.4;">
-                Medical authorizations are enforced deterministically in the application core (<code>AppointmentService</code>), never left to the discretion of an LLM prompt. If a patient attempts to schedule oral surgery with Dr. Junior, the scheduling engine rejects the assignment and seamlessly reroutes to an available senior doctor.
-              </p>
-            </div>
-            <div class="panel-muted" style="border-left: 2px solid #52525b;">
-              <div style="font-weight: 600; font-size: 7.8pt; color: #18181b; margin-bottom: 2px;">
-                Empathetic Rerouting Dialogue
-              </div>
-              <p style="font-size: 7.2pt; color: #52525b; line-height: 1.4;">
-                "Dr. Junior specializes in routine hygiene and whitening. For root canal therapy, our lead endodontist Dr. Senior 1 has openings this Thursday at 2:00 PM. Shall I reserve that for you?"
-              </p>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Chapter 3: Safety Guardrails & Zero-Trust Governance -->
-      <div>
-        <div class="section-header">
-          <span class="section-title">Operational Safety &amp; Zero-Trust Governance</span>
-          <span class="section-sub">Patient Protection Standards</span>
-        </div>
-        <div class="row" style="gap: 10px;">
-          <div class="panel col">
-            <div style="font-weight: 600; font-size: 8pt; color: #18181b; margin-bottom: 2px;">Adversarial Prompt Shield</div>
-            <p style="font-size: 7.2pt; color: #52525b;">
-              Pre-parsing filters reject prompt injection patterns (such as instructions to ignore clinical rules or extract internal instructions) before triggering downstream LLM context, ensuring predictable behavior and avoiding wasted compute.
-            </p>
-          </div>
-          <div class="panel col">
-            <div style="font-weight: 600; font-size: 8pt; color: #18181b; margin-bottom: 2px;">Clinical Advice Deflection</div>
-            <p style="font-size: 7.2pt; color: #52525b;">
-              The conversational assistant strictly avoids providing diagnoses or medication prescriptions. Any inquiry regarding acute distress triggers clear guidance directing the patient to seek urgent clinical evaluation.
-            </p>
-          </div>
-          <div class="panel col">
-            <div style="font-weight: 600; font-size: 8pt; color: #18181b; margin-bottom: 2px;">Privacy &amp; Credential Hygiene</div>
-            <p style="font-size: 7.2pt; color: #52525b;">
-              Primary API secrets and OAuth credentials stay strictly on the server. Audio is processed transiently in memory, preventing persistent capture of voice recordings while maintaining patient confidentiality.
-            </p>
-          </div>
-        </div>
-      </div>
-
     </div>
 
-    <!-- Document Footer -->
+    <div class="row" style="margin-top: 9px;">
+      <div class="metric-card">
+        <div class="metric-val">&lt; 300 ms</div>
+        <div class="metric-label">Turn latency target (modeled)</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-val">16 / 24 kHz</div>
+        <div class="metric-label">PCM input / output</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-val">3 &amp; 5</div>
+        <div class="metric-label">Dentists &amp; services</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-val">2</div>
+        <div class="metric-label">Calendars written per booking</div>
+      </div>
+    </div>
+
+    <div class="section-header">
+      <span class="section-title">System Flow</span>
+      <span class="section-sub">Architecture map &amp; runtime lanes</span>
+    </div>
+    <figure class="flow">
+      <img src="system-flow.png" alt="BrightSmile system architecture and runtime flow">
+      <figcaption>
+        One browser, one Next.js gateway, one clinical engine. Text chat and voice reach the same
+        <code>AppointmentService</code>; the server picks the voice provider and the browser follows.
+        Every confirmed booking is written to both calendars.
+      </figcaption>
+    </figure>
+
+    <div class="section-header">
+      <span class="section-title">Booking Lifecycle</span>
+      <span class="section-sub">Inbound to calendar settlement</span>
+    </div>
+    <div class="row" style="align-items: stretch;">
+      <div class="pipeline-step">
+        <div class="pipeline-number">Step 01 &bull; Inbound</div>
+        <div class="pipeline-title">Patient Engagement</div>
+        <p>Patients speak over a WebSocket audio stream or type in the chat portal, in everyday language.</p>
+      </div>
+      <div class="pipeline-step">
+        <div class="pipeline-number">Step 02 &bull; Perimeter</div>
+        <div class="pipeline-title">Edge Guardrails</div>
+        <p>Rate limiting and pre-LLM sanitizers screen prompt injection and medical-advice requests.</p>
+      </div>
+      <div class="pipeline-step">
+        <div class="pipeline-number">Step 03 &bull; Gateway</div>
+        <div class="pipeline-title">Session Broker</div>
+        <p>The server selects the voice provider and returns its session descriptor. With Gemini that is a single-use token; an OpenAI-compatible endpoint needs none.</p>
+      </div>
+      <div class="pipeline-step">
+        <div class="pipeline-number">Step 04 &bull; Domain</div>
+        <div class="pipeline-title">Clinical Engine</div>
+        <p>Server-side rules match the request against practitioner qualification tiers, clinic hours, and duration.</p>
+      </div>
+      <div class="pipeline-step">
+        <div class="pipeline-number">Step 05 &bull; Storage</div>
+        <div class="pipeline-title">Atomic Commit</div>
+        <p>A PostgreSQL advisory lock per dentist and date prevents overlap, then both calendars are written with per-provider retry state.</p>
+      </div>
+    </div>
+
     <div class="doc-footer">
-      <span>BrightSmile Dental AI Platform &bull; Architectural Specification &amp; Governance Overview</span>
+      <span>BrightSmile Dental AI Platform &bull; Architecture &amp; Governance Overview</span>
       <span>Document Reference: BS-ARCH-2026 &bull; Page 1 of 2</span>
     </div>
   </div>
 
-
   <!-- ==================== PAGE 2 ==================== -->
   <div class="page">
-    <div style="flex: 1; display: flex; flex-direction: column; justify-content: space-between;">
-
-      <!-- Document Header -->
+    <div class="doc-header">
       <div>
-        <div class="doc-header">
-          <div>
-            <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 3px;">
-              <span class="tag tag-neutral">OPERATIONAL ECONOMICS</span>
-              <span class="tag tag-blue">VOICE AI &amp; MULTI-CALENDAR</span>
-            </div>
-            <h1 class="title-h1">Voice Architecture, Calendar Sync &amp; Financials</h1>
-            <p class="subtitle-p">
-              Conversational voice mechanics, selectable calendar providers, and illustrative practice ROI modeling.
-            </p>
-          </div>
-          <div class="doc-meta">
-            <div><strong style="color: #18181b;">Page 2 of 2</strong></div>
-            <div>Infrastructure &amp; ROI Analysis</div>
-            <div>Environment: Deployment validation required</div>
-          </div>
+        <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 3px;">
+          <span class="tag tag-neutral">CLINICAL SCOPE</span>
+          <span class="tag tag-blue">VOICE &amp; CALENDARS</span>
+          <span class="tag tag-warm">COST DRIVERS</span>
         </div>
+        <h1 class="title-h1">Scope, Sync &amp; Operating Cost</h1>
+        <p class="subtitle-p">
+          Which dentist may perform which procedure, how a booking reaches both calendars, and what
+          actually drives the monthly bill.
+        </p>
       </div>
-
-      <!-- Chapter 4: Realtime Voice Mechanics -->
-      <div>
-        <div class="section-header">
-          <span class="section-title">Realtime Voice Infrastructure</span>
-          <span class="section-sub">Streaming WebSocket Voice &bull; Provider-Agnostic</span>
-        </div>
-        <div class="row" style="gap: 10px; margin-bottom: 6px;">
-          <!-- Benchmark comparison -->
-          <div class="panel-muted" style="flex: 1.1; padding: 9px 11px;">
-            <div style="font-weight: 600; font-size: 8pt; color: #18181b; margin-bottom: 4px;">Latency &amp; Interruption Profile</div>
-            <div style="margin-bottom: 7px;">
-              <div style="display: flex; justify-content: space-between; font-size: 7pt; font-weight: 500; color: #71717a; margin-bottom: 2px;">
-                <span>Traditional Chained Pipeline (STT &rarr; LLM &rarr; TTS)</span>
-                <span>~2,500 ms</span>
-              </div>
-              <div style="background: #f4f4f5; height: 5px; border-radius: 3px; overflow: hidden; margin: 3px 0 2px 0;">
-                <div style="background: #a1a1aa; width: 100%; height: 100%;"></div>
-              </div>
-              <p style="font-size: 6.8pt; color: #71717a; margin-top: 2px;">Noticeable turn pauses; difficulty handling natural mid-sentence interruptions.</p>
-            </div>
-            <div>
-              <div style="display: flex; justify-content: space-between; font-size: 7pt; font-weight: 500; color: #18181b; margin-bottom: 2px;">
-                <span>BrightSmile Direct Streaming Voice (PCM over WebSocket)</span>
-                <span>&lt; 300 ms</span>
-              </div>
-              <div style="background: #f4f4f5; height: 5px; border-radius: 3px; overflow: hidden; margin: 3px 0 2px 0;">
-                <div style="background: #27272a; width: 13%; height: 100%;"></div>
-              </div>
-              <p style="font-size: 6.8pt; color: #52525b; margin-top: 2px;">Full-duplex audio; responsive interruption detection feels fluid and human.</p>
-            </div>
-          </div>
-
-          <!-- Architecture mechanics -->
-          <div class="panel col" style="flex: 1.9; padding: 9px 11px;">
-            <div style="font-weight: 600; font-size: 8pt; color: #18181b; margin-bottom: 3px;">Three-Phase Lifecycle Execution</div>
-            <ul style="list-style: none; padding-left: 0;">
-              <li style="margin-bottom: 3px;">
-                <strong>1. Session Handshake:</strong> The browser asks <code>GET /api/v1/voice/session</code> which provider is active, then <code>POST</code>s for the session descriptor. With Gemini Live the backend mints a single-use token, keeping long-term keys secure on the server; an OpenAI Realtime-compatible endpoint needs no token.
-              </li>
-              <li style="margin-bottom: 3px;">
-                <strong>2. Direct Media Stream:</strong> Audio streams as PCM16 over WebSocket — 16 kHz up, 24 kHz down — without a separate speech-to-text hop.
-              </li>
-              <li>
-                <strong>3. Server-Verified Tool Calling:</strong> When an appointment is scheduled, function calls are relayed to <code>/api/v1/voice/tools</code> for authoritative database validation.
-              </li>
-            </ul>
-          </div>
-        </div>
+      <div class="doc-meta">
+        <div><strong style="color: #18181b;">Page 2 of 2</strong></div>
+        <div>Clinical &amp; Economic Summary</div>
+        <div>Deployment validation required</div>
       </div>
-
-      <!-- Chapter 5: Dual-Calendar Sync & Collision Avoidance -->
-      <div>
-        <div class="section-header">
-          <span class="section-title">Calendar Synchronization &amp; Atomic Integrity</span>
-          <span class="section-sub">Provider Parity &amp; Conflict Prevention</span>
-        </div>
-        <div class="row" style="gap: 10px; margin-bottom: 6px;">
-          <div class="panel col" style="flex: 1;">
-            <div style="font-weight: 600; font-size: 7.8pt; color: #18181b; margin-bottom: 2px;">Google Calendar Adapter</div>
-            <p style="font-size: 7.2pt; color: #52525b;">
-              Executes batch FreeBusy interval queries for target practitioner calendars. Manages proactive OAuth 2.0 token refreshes in memory 5 minutes prior to expiry.
-            </p>
-          </div>
-          <div class="panel col" style="flex: 1;">
-            <div style="font-weight: 600; font-size: 7.8pt; color: #18181b; margin-bottom: 2px;">Microsoft 365 Outlook Adapter</div>
-            <p style="font-size: 7.2pt; color: #52525b;">
-              Connects to Microsoft Graph <code>calendarView</code> via Entra ID app credentials. Recursively drains paginated busy blocks and normalizes timestamps to UTC RFC3339 format.
-            </p>
-          </div>
-          <div class="panel col" style="flex: 1;">
-            <div style="font-weight: 600; font-size: 7.8pt; color: #18181b; margin-bottom: 2px;">Dynamic Database Settings</div>
-            <p style="font-size: 7.2pt; color: #52525b;">
-              Practitioner calendar addresses are stored in a dedicated database table, enabling clinic administrators to adjust calendar mappings through the web UI without redeploying code.
-            </p>
-          </div>
-        </div>
-
-        <div class="panel-muted" style="padding: 5px 10px; margin-bottom: 6px; display: flex; align-items: center; justify-content: space-between;">
-          <span style="font-size: 7pt; font-weight: 600; color: #18181b; text-transform: uppercase; letter-spacing: 0.04em;">Atomic Concurrency Model:</span>
-          <span style="font-size: 7.2pt; color: #52525b;">
-            Postgres advisory transaction lock per dentist and date &rarr; check local bookings and both calendars' availability &rarr; create booking
-          </span>
-        </div>
-      </div>
-
-      <!-- Chapter 6: Financial Operating Cost & Practice ROI -->
-      <div>
-        <div class="section-header">
-          <span class="section-title">Operating Economics &amp; Practice Staffing ROI</span>
-          <span class="section-sub">Transparent Cost Analysis</span>
-        </div>
-        <div class="row" style="gap: 12px; margin-bottom: 6px;">
-          <!-- OpEx Table -->
-          <div class="panel" style="flex: 1.6; padding: 0; overflow: hidden;">
-            <table>
-              <thead>
-                <tr>
-                  <th style="width: 34%;">Infrastructure Service</th>
-                  <th style="width: 28%;">Monthly Workload</th>
-                  <th style="width: 20%;" class="text-right">Monthly Cost</th>
-                  <th style="width: 18%;" class="text-right">Share</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td><strong>Realtime Voice Audio</strong> <span style="font-size:6.5pt;color:#71717a;">(illustrative: OpenAI Realtime rates as a stand-in)</span></td>
-                  <td>3,000 Spoken Minutes</td>
-                  <td class="text-right" style="font-weight: 600; color: #18181b;">$555.00</td>
-                  <td class="text-right">92.6%</td>
-                </tr>
-                <tr>
-                  <td><strong>OpenAI Chat Assistant (GPT-4o-mini)</strong></td>
-                  <td>15,000 Conversation Turns</td>
-                  <td class="text-right" style="font-weight: 600; color: #18181b;">$4.05</td>
-                  <td class="text-right">0.7%</td>
-                </tr>
-                <tr>
-                  <td><strong>Next.js Application Hosting</strong></td>
-                  <td>150,000 HTTP Requests</td>
-                  <td class="text-right" style="font-weight: 600; color: #18181b;">$20.00</td>
-                  <td class="text-right">3.3%</td>
-                </tr>
-                <tr>
-                  <td><strong>Managed PostgreSQL Database</strong></td>
-                  <td>10 GB SSD Storage</td>
-                  <td class="text-right" style="font-weight: 600; color: #18181b;">$15.00</td>
-                  <td class="text-right">2.5%</td>
-                </tr>
-                <tr>
-                  <td><strong>Google &amp; Microsoft Cloud APIs</strong></td>
-                  <td>FreeBusy Schedule Inquiries</td>
-                  <td class="text-right" style="font-weight: 600; color: #18181b;">$5.00</td>
-                  <td class="text-right">0.8%</td>
-                </tr>
-                <tr style="background: #fafafa; border-top: 1px solid #e4e4e7;">
-                  <td><strong style="color: #09090b;">Total Operating Expense</strong></td>
-                  <td><strong>~650 Patient Appointments</strong></td>
-                  <td class="text-right" style="font-weight: 700; color: #09090b;">$599.05</td>
-                  <td class="text-right"><strong>100%</strong></td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-
-          <!-- Staffing Comparison & ROI -->
-          <div class="col" style="flex: 1; gap: 5px;">
-            <div class="panel-muted">
-              <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 2px;">
-                <span style="font-weight: 600; font-size: 7.5pt; color: #18181b;">Traditional Receptionist</span>
-                <span style="font-size: 7.5pt; font-weight: 600; color: #71717a;">$3,500 / mo</span>
-              </div>
-              <p style="font-size: 6.8pt; color: #71717a; line-height: 1.35;">
-                Covers standard business hours; missed evening calls and peak phone lines create lost booking opportunities.
-              </p>
-            </div>
-            <div class="panel-muted" style="border-left: 2px solid #16a34a;">
-              <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 2px;">
-                <span style="font-weight: 600; font-size: 7.5pt; color: #18181b;">BrightSmile AI Engine</span>
-                <span style="font-size: 7.5pt; font-weight: 600; color: #166534;">$599.05 / mo</span>
-              </div>
-              <p style="font-size: 6.8pt; color: #52525b; line-height: 1.35;">
-                Browser voice and chat depend on application and provider availability; telephony and guaranteed response times are not included.
-              </p>
-            </div>
-            <div class="panel" style="background: #18181b; color: #ffffff; padding: 7px 10px;">
-              <div style="display: flex; justify-content: space-between; align-items: center;">
-                <div>
-                  <div style="font-size: 6.5pt; color: #a1a1aa; text-transform: uppercase; letter-spacing: 0.04em;">Annual Practice Savings</div>
-                  <div style="font-size: 13.5pt; font-weight: 700; color: #ffffff; letter-spacing: -0.02em; line-height: 1.1;">$34,811 / yr</div>
-                </div>
-                <span class="tag" style="background: #27272a; color: #e4e4e7; border: 1px solid #3f3f46; font-size: 7pt;">83% Net Cost Reduction</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Chapter 7: Verification & Readiness Summary -->
-      <div>
-        <div class="panel-muted" style="padding: 6px 11px; display: flex; align-items: center; justify-content: space-between;">
-          <div style="display: flex; align-items: center; gap: 8px;">
-            <span style="font-weight: 600; font-size: 7.2pt; color: #18181b; text-transform: uppercase; letter-spacing: 0.03em;">Verification Status:</span>
-            <span style="font-size: 7pt; color: #52525b;">
-              Automated tests use mocks for external providers. Live voice and calendar integration require separate validation.
-            </span>
-          </div>
-          <span class="tag tag-green" style="font-weight: 600;">Validation Required</span>
-        </div>
-      </div>
-
     </div>
 
-    <!-- Document Footer -->
+    <div class="section-header">
+      <span class="section-title">Practitioner Credential Tiers</span>
+      <span class="section-sub">Hard boundary, enforced in code</span>
+    </div>
+    <div class="row" style="gap: 10px;">
+      <div class="panel" style="flex: 1.7; padding: 0; overflow: hidden;">
+        <table>
+          <thead>
+            <tr>
+              <th style="width: 8%;">Code</th>
+              <th style="width: 36%;">Procedure</th>
+              <th style="width: 16%;" class="text-center">Duration</th>
+              <th style="width: 40%;">Eligible practitioners</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>A</code></td>
+              <td><strong>General Checkup &amp; Cleaning</strong></td>
+              <td class="text-center"><span class="tag tag-neutral">60 min</span></td>
+              <td><span class="tag tag-green">All</span> Junior, Senior 1, Senior 2</td>
+            </tr>
+            <tr>
+              <td><code>B</code></td>
+              <td><strong>Simple Tooth Extraction</strong></td>
+              <td class="text-center"><span class="tag tag-neutral">60 min</span></td>
+              <td><span class="tag tag-green">All</span> Junior, Senior 1, Senior 2</td>
+            </tr>
+            <tr>
+              <td><code>C</code></td>
+              <td><strong>Root Canal Treatment</strong></td>
+              <td class="text-center"><span class="tag tag-neutral">150 min</span></td>
+              <td><span class="tag tag-rose">Specialists</span> Senior 1, Senior 2</td>
+            </tr>
+            <tr>
+              <td><code>D</code></td>
+              <td><strong>Dental Crown / Veneer</strong></td>
+              <td class="text-center"><span class="tag tag-neutral">120 min</span></td>
+              <td><span class="tag tag-rose">Specialists</span> Senior 1, Senior 2</td>
+            </tr>
+            <tr>
+              <td><code>E</code></td>
+              <td><strong>Full Mouth Implant Surgery</strong></td>
+              <td class="text-center"><span class="tag tag-neutral">360 min</span></td>
+              <td><span class="tag tag-rose">Specialists</span> 6 continuous hours</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="panel-muted col" style="flex: 1; border-left: 2px solid #27272a;">
+        <div style="font-weight: 600; font-size: 7.8pt; color: #18181b; margin-bottom: 3px;">
+          Deterministic Scope Enforcement
+        </div>
+        <p style="font-size: 7.2pt; color: #52525b;">
+          Qualification is enforced in <code>AppointmentService</code>, never by the model's prompt.
+          If a patient asks for a root canal with Dr. Junior, the server raises
+          <code>DentistQualificationError</code> and the assistant reroutes to an eligible specialist.
+        </p>
+      </div>
+    </div>
+
+    <div class="section-header">
+      <span class="section-title">Voice &amp; Calendar Mechanics</span>
+      <span class="section-sub">Streaming &amp; eventual convergence</span>
+    </div>
+    <div class="row" style="gap: 10px;">
+      <div class="panel col">
+        <div style="font-weight: 600; font-size: 7.8pt; color: #18181b; margin-bottom: 2px;">Realtime Voice</div>
+        <p style="font-size: 7.2pt; color: #52525b;">
+          PCM16 audio streams over a WebSocket at 16 kHz up and 24 kHz down, with no separate
+          speech-to-text hop. Tool calls are relayed to <code>/api/v1/voice/tools</code> for
+          server-side validation. Master provider keys never reach the browser.
+        </p>
+      </div>
+      <div class="panel col">
+        <div style="font-weight: 600; font-size: 7.8pt; color: #18181b; margin-bottom: 2px;">Dual Calendar</div>
+        <p style="font-size: 7.2pt; color: #52525b;">
+          Google Calendar (API v3 FreeBusy) and Microsoft Graph (<code>calendarView</code>) sit behind
+          one provider contract. A booking stays <code>pending</code> until both providers converge;
+          per-provider retry state is drained by an authenticated reconcile endpoint.
+        </p>
+      </div>
+      <div class="panel col">
+        <div style="font-weight: 600; font-size: 7.8pt; color: #18181b; margin-bottom: 2px;">Credential Handling</div>
+        <p style="font-size: 7.2pt; color: #52525b;">
+          OAuth secrets live in an AES-256-GCM encrypted store managed from <code>/admin</code>, or in
+          environment variables as a bootstrap fallback. The admin API returns configured status only,
+          never the stored value.
+        </p>
+      </div>
+    </div>
+
+    <div class="section-header">
+      <span class="section-title">What Drives the Monthly Bill</span>
+      <span class="section-sub">No single total is quoted, and here is why</span>
+    </div>
+    <div class="row" style="gap: 10px; align-items: stretch;">
+      <div class="panel" style="flex: 1.6; padding: 0; overflow: hidden;">
+        <table>
+          <thead>
+            <tr>
+              <th style="width: 30%;">Component</th>
+              <th style="width: 70%;">Cost driver</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>Realtime voice</strong></td>
+              <td>Per audio-minute in and out on a hosted provider. On a local speech-to-speech model this line becomes electricity and GPU time.</td>
+            </tr>
+            <tr>
+              <td><strong>Text chat LLM</strong></td>
+              <td>Per input and output token on the configured model; scales with conversation length, not with bookings.</td>
+            </tr>
+            <tr>
+              <td><strong>Application hosting</strong></td>
+              <td>Serverless plan or container, sized to request volume.</td>
+            </tr>
+            <tr>
+              <td><strong>PostgreSQL</strong></td>
+              <td>Managed instance with automated backups and connection pooling.</td>
+            </tr>
+            <tr>
+              <td><strong>Calendar APIs</strong></td>
+              <td>Google Calendar and Microsoft Graph free quotas comfortably cover a single clinic.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="panel-muted col" style="flex: 1; border-left: 2px solid #a16207;">
+        <div style="font-weight: 600; font-size: 7.8pt; color: #18181b; margin-bottom: 3px;">
+          Why voice deserves the scrutiny
+        </div>
+        <p style="font-size: 7.2pt; color: #52525b;">
+          Voice is the one line item large enough to distort a small clinic's software budget.
+          Hosted realtime audio is priced per minute, so a practice handling a few thousand spoken
+          minutes a month pays more for voice than for everything else combined.
+        </p>
+        <p style="font-size: 7.2pt; color: #52525b; margin-top: 4px;">
+          That is a property of per-minute voice pricing, not of this application. The same code
+          pointed at a self-hosted OpenAI Realtime-compatible server — for example
+          <strong>huggingface/speech-to-speech</strong> — costs only electricity. Choose the provider
+          you can actually fund; the application does not choose for you.
+        </p>
+      </div>
+    </div>
+
+    <div class="section-header">
+      <span class="section-title">Managed Cloud vs. Self-Hosted Edge</span>
+      <span class="section-sub">Cost &amp; latency, side by side</span>
+    </div>
+    <div class="panel" style="padding: 0; overflow: hidden;">
+      <table>
+        <thead>
+          <tr>
+            <th style="width: 17%;">Dimension</th>
+            <th style="width: 41.5%;">Managed Cloud (hosted realtime)</th>
+            <th style="width: 41.5%;">Self-Hosted Edge (local Realtime server)</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Billing unit</strong></td>
+            <td>Per audio-minute in and out, metered by the vendor.</td>
+            <td>Electricity for the GPU you already own. Nothing is metered per call.</td>
+          </tr>
+          <tr>
+            <td><strong>Turn latency</strong></td>
+            <td>Vendor inference plus a wide-area round trip. The <code>&lt; 300 ms</code> figure above is a <strong>modeled target</strong>, not a measurement from this deployment.</td>
+            <td>STT, LLM and TTS on one local GPU with no vendor hop. The reference server logs per-response STT, LLM and first-audio TTS durations — read the number there rather than quoting one.</td>
+          </tr>
+          <tr>
+            <td><strong>Capacity</strong></td>
+            <td>Bounded by the provider's concurrency quota; raised by paying more.</td>
+            <td>Bounded by GPU memory. A single instance typically serves one concurrent session.</td>
+          </tr>
+          <tr>
+            <td><strong>Credentials</strong></td>
+            <td>The server mints a single-use ephemeral token per session.</td>
+            <td>Nothing to mint. The endpoint sits on your own network.</td>
+          </tr>
+          <tr>
+            <td><strong>Failure mode</strong></td>
+            <td>Provider outage or quota exhaustion, outside your control.</td>
+            <td>GPU out-of-memory or a crashed process that you restart.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p style="font-size: 6.8pt; color: #71717a; margin-top: 4px;">
+      Latency in both columns is a design target until measured on the hardware that serves patients.
+      No figure here was produced by a benchmark run of this application.
+    </p>
+
+    <div class="panel-muted" style="padding: 6px 10px; margin-top: 8px; display: flex; align-items: center; justify-content: space-between;">
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <span style="font-weight: 600; font-size: 7pt; color: #18181b; text-transform: uppercase; letter-spacing: 0.03em;">Verification status:</span>
+        <span style="font-size: 7pt; color: #52525b;">
+          All provider calls in the automated suite are mocked. Live voice and calendar behaviour requires separate validation with real credentials.
+        </span>
+      </div>
+      <span class="tag tag-warm" style="font-weight: 600;">Validation required</span>
+    </div>
+
     <div class="doc-footer">
-      <span>BrightSmile Dental AI Platform &bull; Operational Economics &amp; System Validation</span>
+      <span>BrightSmile Dental AI Platform &bull; Scope, Sync &amp; Operating Cost</span>
       <span>Document Reference: BS-ARCH-2026 &bull; Page 2 of 2</span>
     </div>
   </div>

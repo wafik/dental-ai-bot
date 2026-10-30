@@ -119,6 +119,14 @@ flowchart TB
 
 ## 3. Workload Assumptions & Monthly Financial Cost Analysis
 
+> **Read this section as a worked example, not a quote.** Every figure below assumes one specific
+> choice: hosted realtime voice billed per audio-minute. That single line is ~93% of the total, so the
+> total is a property of the provider you pick, not of this application. Point the same code at a
+> self-hosted OpenAI Realtime-compatible server (see
+> [huggingface/speech-to-speech](https://github.com/huggingface/speech-to-speech)) and the voice line
+> collapses to GPU time and electricity. Rates were illustrative at the time of writing and have not
+> been re-verified; substitute current pricing before quoting a clinic.
+
 ### 3.1 Workload Model
 
 To provide a concrete, realistic financial forecast for an active dental clinic, we model the following monthly workload:
@@ -188,7 +196,25 @@ To provide a concrete, realistic financial forecast for an active dental clinic,
 * **Cost per Confirmed Booking (~650 bookings):** **$0.92 per patient booked**
 
 *Comparison with Human Staffing:*  
-A full-time dental receptionist in the US/UK costs between $3,000 and $4,500/month for 40 hours/week. The AI solution operates **24/7/365 with zero hold times, handles concurrent callers, and costs less than 20% of a single human receptionist.**
+A full-time dental receptionist in the US/UK costs between $3,000 and $4,500/month for 40 hours/week. The AI solution operates 24/7/365 with zero hold times and handles concurrent callers. The saving above is arithmetic between those two figures and assumes the voice bill stays at the hosted per-minute rate; a self-hosted voice model widens it, a busier clinic narrows it.
+
+#### 3.3.1 Managed Cloud vs. Self-Hosted Edge (Cost & Latency)
+
+Both columns run the same application code. The choice is configuration — `GEMINI_API_KEY` (managed)
+vs. `OPENAI_COMPATIBLE_VOICE_URL` (self-hosted) — not a fork.
+
+| Dimension | Managed Cloud (`gemini-live`) | Self-Hosted Edge (`openai-compatible`) |
+| :--- | :--- | :--- |
+| **Billing unit** | Per audio-minute in and out; every spoken second is metered. | GPU time and electricity. No request is metered or capped. |
+| **Modeled footprint at §3.1 volume** | The **$555.00 / month (illustrative)** voice line above — 92.6% of the total. | That line collapses; only hardware depreciation and power remain. |
+| **Latency profile** | Vendor inference plus a wide-area round trip from the clinic to a provider region. `< 300 ms` is a modeled target for this class of provider, **not a measurement of this deployment**. | Silero VAD → streaming STT → LLM → TTS on one local GPU, no vendor hop. Degrades with larger models and GPU load, not with network distance. |
+| **Measurement** | Only the vendor reports turn timings; this app sees WebSocket frame arrival. | The `speech-to-speech` server logs per-response STT, LLM, and first-TTS-audio durations — the only honest source for a number; read it on the serving hardware. |
+| **Capacity & failure** | Provider concurrency quota; an outage is outside the operator's control. | GPU memory, typically one concurrent session per instance; an OOM is a process to restart. |
+| **Credentials & data path** | Server mints a single-use ephemeral token per session; audio leaves the clinic network. | Nothing is minted — no metered account to authorize; audio stays on the operator's network end to end. |
+
+No latency figure in this document was produced by a benchmark run of this application. The
+self-hosted path is wired and tested with mocked transports; measure it on the GPU that will serve
+patients before quoting either number to a clinic.
 
 ### 3.4 Build and Maintenance Cost
 
@@ -254,7 +280,7 @@ In production enterprise deployments, configuration and credentials are bifurcat
 | **Multi-Tenant OAuth Tokens** (Future SaaS Phase) | **Database (Encrypted)** | Encrypted table column (`AES-256-GCM`) | For multi-clinic platforms where clinics connect calendars via OAuth; tokens must be encrypted-at-rest with a KMS master key. |
 
 *Factory Resolution Flow:*
-`resolveCalendarProvider()` in `src/providers/calendar/calendar-factory.ts` retrieves active calendar mappings from `SettingsRepository` (`dentist_calendar_mappings` table) with graceful fallback to `.env`, dynamically constructing `GoogleCalendarAdapter` or `OutlookCalendarAdapter`. OAuth credentials are resolved from the encrypted `encrypted_secrets` table first (managed in the admin console) and fall back to environment variables for bootstrap/migration.
+`resolveCalendarProvider()` in `src/providers/calendar/calendar-factory.ts` reads the `CALENDAR_PROVIDER` setting from `SettingsRepository` (falling back to the environment variable), then **builds both** a `GoogleCalendarAdapter` and an `OutlookCalendarAdapter` — a clinic booking must reach both calendars. It is fail-closed: if either provider is missing credentials or any of the three dentist mappings, the factory throws listing what is missing instead of silently skipping a calendar. The only local-only mode is an explicit `CALENDAR_PROVIDER=none`. Per provider, credentials resolve field by field from the encrypted `encrypted_secrets` table (managed in the admin console) and fall back to environment variables for bootstrap/migration; dentist calendar IDs come from `dentist_calendar_mappings` rows with the same environment fallback.
 
 ---
 

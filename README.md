@@ -185,6 +185,45 @@ bun run dev
 
 Open [http://localhost:3000](http://localhost:3000) in your browser to experience the clinical portal.
 
+#### Running voice against a local speech-to-speech model
+
+Voice does not have to touch a cloud vendor. Any server that speaks the OpenAI Realtime GA protocol
+over WebSocket can back the widget. The reference option is
+[huggingface/speech-to-speech](https://github.com/huggingface/speech-to-speech) — an open pipeline
+(Silero VAD → Parakeet TDT → Qwen3.5 → Qwen3-TTS) that runs entirely on your own machine. Any
+equivalent self-hosted stack works the same way.
+
+1. Start the server. For the Hugging Face pipeline:
+
+   ```bash
+   python3 -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\Activate.ps1
+   pip install speech-to-speech
+   speech-to-speech serve --host 127.0.0.1 --port 8765
+   ```
+
+   It speaks the OpenAI Realtime protocol at `ws://127.0.0.1:8765/v1/realtime`. On NVIDIA hardware
+   budget about 16 GB of VRAM; `speech-to-speech local` starts server and microphone client together
+   if you want to sanity-check the pipeline before pointing this app at it.
+2. Empty `GEMINI_API_KEY` in `.env.local` (it wins when set) and keep only:
+
+   ```env
+   OPENAI_COMPATIBLE_VOICE_URL="ws://127.0.0.1:8765/v1/realtime"
+   OPENAI_COMPATIBLE_VOICE_MODEL="gpt-realtime"
+   ```
+
+3. Reload the page and start a call.
+
+Things to know while testing locally:
+
+- The loopback URL is reachable only from the machine running the browser. Point
+  `OPENAI_COMPATIBLE_VOICE_URL` at a LAN or tunnel address to test from a phone.
+- A local server typically allows **one** concurrent session; a second call is rejected with
+  "Voice provider has no free session slots".
+- Voice activity detection ignores tones and sine waves. Test with real speech through a real
+  microphone, not with a generated beep.
+- Some local servers want reasoning disabled on the LLM (e.g. `reasoning_effort: "none"`) or replies
+  take seconds per turn. That is a server setting, not an app setting.
+
 ---
 
 ## 🧪 Testing & Quality Gates
@@ -213,20 +252,23 @@ bun run build
 
 ---
 
-## 💰 Production Financial Cost Analysis
+## 💰 Production Cost Analysis
 
-A concrete monthly cost model for an active dental clinic handling **1,000 voice calls** (3,000 spoken minutes) and **3,000 chat interactions** (15,000 turns):
+Cost depends entirely on which providers you run.
 
-| Service Category | Monthly Cost (USD) | Notes |
-| :--- | :--- | :--- |
-| **Conversational Voice AI (illustrative)** | $555.00 | 3,000 spoken minutes @ $0.06 in / $0.24 out; OpenAI Realtime rates used as a stand-in, not a quoted Gemini Live price |
-| **Text Chat LLM (GPT-4o-mini)** | $4.05 | 18M input tokens / 2.25M output tokens |
-| **Application Hosting (Vercel / AWS ECS)** | $20.00 | Serverless Next.js edge runtime |
-| **Managed Database (PostgreSQL / Neon / Supabase)** | $15.00 | Dedicated instance with automated backups |
-| **Calendar APIs (Google Cloud & MS Graph)** | $5.00 | Free quotas cover up to 1M queries/day |
-| **TOTAL ESTIMATED MONTHLY COST** | **$599.05** | **~$0.56 per voice call / $0.0014 per chat** |
+| Component | Cost driver |
+| :--- | :--- |
+| **Realtime Voice AI** | Typically the dominant cost when using a hosted provider (per audio-minute in and out). Running a local speech-to-speech model removes this line item, leaving only electricity and your own GPU. |
+| **Text Chat LLM** | Per-token input/output on the configured model. |
+| **Application Hosting** | Serverless plan or container per the chosen platform. |
+| **Managed Database** | PostgreSQL instance with automated backups. |
+| **Calendar APIs** | Google Calendar and Microsoft Graph both have free quotas that comfortably cover a single clinic. |
 
-> For comprehensive cost calculations, trade-offs, and HIPAA/GDPR considerations, see [docs/INTERNAL_ARCHITECTURE_AND_COST.md](docs/INTERNAL_ARCHITECTURE_AND_COST.md).
+No monthly figure is quoted here on purpose: the voice line dominates any estimate, and it swings
+from a per-minute provider bill to zero once you deploy a local model. Price the deployment against
+the providers you actually configure. The historical per-minute model, with its assumptions stated
+explicitly, is kept in [docs/INTERNAL_ARCHITECTURE_AND_COST.md](docs/INTERNAL_ARCHITECTURE_AND_COST.md)
+for reference.
 
 ---
 
