@@ -64,9 +64,10 @@ describe("Day 7: Critical Scheduling Edge Cases & Enterprise Guardrails", () => 
           start: busyStartUtc,
           end: busyEndUtc,
         }),
+        deleteEvent: async () => {},
       };
 
-      const service = new AppointmentService(repository, mockCalendar);
+      const service = new AppointmentService(repository, { google: mockCalendar });
 
       // Attempting to book at 10:00 must be rejected as slot unavailable
       await expect(

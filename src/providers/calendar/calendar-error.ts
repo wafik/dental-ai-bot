@@ -6,7 +6,7 @@ export type CalendarProviderName = "google" | "outlook";
 /**
  * Calendar operations that can be performed by adapters.
  */
-export type CalendarOperation = "getBusyIntervals" | "createEvent" | "refreshToken";
+export type CalendarOperation = "getBusyIntervals" | "createEvent" | "deleteEvent" | "refreshToken";
 
 /**
  * Initialization options for CalendarProviderError.

@@ -100,6 +100,8 @@ Because delegated access queries the `/me/calendars/{calendarId}` endpoint:
 Copy `.env.example` to `.env` and fill in the values obtained above:
 
 ```bash
+CALENDAR_PROVIDER=both # or "none" for local-only mode
+
 # Google Calendar
 GOOGLE_CLIENT_ID=your-google-client-id.apps.googleusercontent.com
 GOOGLE_CLIENT_SECRET=your-google-client-secret
@@ -116,7 +118,13 @@ MICROSOFT_REFRESH_TOKEN=your-microsoft-refresh-token
 MICROSOFT_CALENDAR_JUNIOR=your-microsoft-calendar-id-junior
 MICROSOFT_CALENDAR_SENIOR_1=your-microsoft-calendar-id-senior-1
 MICROSOFT_CALENDAR_SENIOR_2=your-microsoft-calendar-id-senior-2
+
+# Retry scheduler token
+CALENDAR_RECONCILE_TOKEN=your-random-32-byte-hex-token
 ```
+
+Both provider blocks are required when `CALENDAR_PROVIDER` is not `none`: resolution throws with the
+list of missing variables rather than silently syncing only one calendar.
 
 ---
 
@@ -141,10 +149,44 @@ The current implementation includes:
 - Provider-neutral contract (`CalendarProvider`) in `src/providers/calendar/calendar-provider.ts`.
 - In-memory delegated access token caching with automatic proactive refresh 60 seconds before expiration.
 - Complete Google Calendar API v3 adapter (`GoogleCalendarAdapter`) and Microsoft Graph REST adapter (`OutlookCalendarAdapter`).
+- Dual writes: every booking is created in both Google Calendar and Outlook, and every cancellation deletes the event from both.
+- Durable per-provider sync state (`appointment_calendar_syncs`): a booking stays `pending` and a cancellation stays `cancelling` until both providers converge.
 - Comprehensive unit, error, and parity contract tests using mocked HTTP requests.
 
 The current implementation intentionally does **not** include:
 - In-app interactive OAuth consent UI or callback route handlers.
 - Database persistence or automatic rotation of refresh tokens.
-- Event cancellation or rescheduling endpoints.
+- Event rescheduling (moving an existing event); cancellation deletes and rebooking creates.
 - Live network requests or automated cloud resource provisioning during automated CI test runs. Live integration testing will be conducted once cloud resources are provisioned.
+
+---
+
+## 6. Retrying Failed Writes
+
+A provider failure never produces a false "booked" or "cancelled" state:
+
+- The appointment stays `pending` (booking) or `cancelling` (cancellation), and its slot stays
+  blocked.
+- One row per provider is written to `appointment_calendar_syncs` with its own status, attempt
+  count, and next retry time.
+- Google creates use the appointment UUID (dashes removed) as the caller-supplied event ID and are
+  `PUT`-upserted, so a retry cannot duplicate the event.
+- Microsoft Graph assigns event IDs, so an ambiguous Outlook create is flagged
+  `needs_manual_reconciliation` instead of being retried blindly. Deletes are idempotent at both
+  providers and are always retried.
+
+Retries run when an external scheduler calls the secured endpoint:
+
+```bash
+curl -X POST "https://your-app.example/api/v1/admin/reconcile-calendar?limit=25" \
+  -H "Authorization: Bearer $CALENDAR_RECONCILE_TOKEN"
+```
+
+The response contains counts only (`claimed`, `succeeded`, `retried`, `manual`, `confirmed`,
+`cancelled`); provider error bodies, tokens, and patient data are never returned. Rows are claimed
+with a lease, so overlapping scheduler runs cannot process the same row twice. Each row is retried
+with exponential backoff up to 8 attempts, then marked `needs_manual_reconciliation` for staff.
+
+Set `CALENDAR_RECONCILE_TOKEN` to a random value (32 bytes) and schedule the call from your existing
+platform scheduler (for example a cloud cron job or Vercel Cron with the token stored as a secret).
+The endpoint returns 503 when the token is not configured.

@@ -39,21 +39,21 @@ export class ChatOrchestrator {
 
   /**
    * Processes a user message turn within an existing or new conversation history.
-   * Injects system prompt if not present at index 0, dispatches tool calls in a loop,
+   * Injects the trusted system prompt, dispatches tool calls in a loop,
    * and returns the final assistant reply alongside the updated conversation history.
    */
   async handleUserMessage(
     history: LLMChatMessage[],
     userMessage?: string,
   ): Promise<ChatOrchestratorResult> {
-    const messages: LLMChatMessage[] = [...history];
-
-    // Ensure system prompt is present at index 0
-    if (messages.length === 0 || messages[0]?.role !== "system") {
-      messages.unshift({
-        role: "system",
-        content: this.systemPrompt,
-      });
+    const messages: LLMChatMessage[] = [{ role: "system", content: this.systemPrompt }];
+    for (const message of history) {
+      if (
+        (message.role === "user" || message.role === "assistant") &&
+        typeof message.content === "string"
+      ) {
+        messages.push({ role: message.role, content: message.content });
+      }
     }
 
     // Append new user message if provided

@@ -95,6 +95,18 @@ export const APPOINTMENT_TOOL_DEFINITIONS: LLMToolDefinition[] = [
   },
 ];
 
+/** Model-supplied strings are untrusted: bound them before they reach storage or a calendar. */
+const MAX_ARG_LENGTH = 200;
+
+function readString(args: Record<string, unknown>, field: string): string | undefined {
+  const value = args[field];
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const trimmed = value.trim();
+  return trimmed.length > 0 && trimmed.length <= MAX_ARG_LENGTH ? trimmed : undefined;
+}
+
 /**
  * Dispatches and executes an appointment management tool against the AppointmentService.
  * Returns a JSON-serialized string with the operation output or error.
@@ -117,24 +129,19 @@ export async function executeAppointmentTool(
       }
 
       case "check_availability": {
-        if (
-          !args.serviceCode ||
-          typeof args.serviceCode !== "string" ||
-          !args.date ||
-          typeof args.date !== "string"
-        ) {
+        const serviceCode = readString(args, "serviceCode");
+        const date = readString(args, "date");
+        if (!serviceCode || !date) {
           return JSON.stringify({
             success: false,
             error: "Missing or invalid required fields: serviceCode and date are required.",
           });
         }
 
-        const serviceCode = args.serviceCode as DentalService["code"];
-        const date = args.date;
-        const dentistId = typeof args.dentistId === "string" ? args.dentistId : undefined;
+        const dentistId = readString(args, "dentistId");
 
         const slots = await service.getAvailableSlots({
-          serviceCode,
+          serviceCode: serviceCode as DentalService["code"],
           date,
           dentistId,
         });
@@ -152,9 +159,11 @@ export async function executeAppointmentTool(
           "patientPhone",
         ] as const;
 
-        const missing = requiredFields.filter(
-          (field) => !args[field] || typeof args[field] !== "string",
-        );
+        const values = Object.fromEntries(
+          requiredFields.map((field) => [field, readString(args, field)]),
+        ) as Record<(typeof requiredFields)[number], string | undefined>;
+
+        const missing = requiredFields.filter((field) => !values[field]);
 
         if (missing.length > 0) {
           return JSON.stringify({
@@ -164,33 +173,37 @@ export async function executeAppointmentTool(
         }
 
         const appointment = await service.bookAppointment({
-          serviceCode: args.serviceCode as DentalService["code"],
-          dentistId: args.dentistId as string,
-          date: args.date as string,
-          startTime: args.startTime as string,
-          patientName: args.patientName as string,
-          patientPhone: args.patientPhone as string,
+          serviceCode: values.serviceCode as DentalService["code"],
+          dentistId: values.dentistId as string,
+          date: values.date as string,
+          startTime: values.startTime as string,
+          patientName: values.patientName as string,
+          patientPhone: values.patientPhone as string,
         });
 
         return JSON.stringify({ success: true, appointment });
       }
 
       case "cancel_appointment": {
-        if (!args.appointmentId || typeof args.appointmentId !== "string") {
+        const appointmentId = readString(args, "appointmentId");
+        if (!appointmentId) {
           return JSON.stringify({
             success: false,
             error: "Missing or invalid required field: appointmentId is required.",
           });
         }
 
-        const appointment = await service.cancelAppointment({
-          appointmentId: args.appointmentId,
-        });
+        const appointment = await service.cancelAppointment({ appointmentId });
 
+        // A pending external delete means the slot is still held; do not tell the
+        // caller it is available again.
         return JSON.stringify({
           success: true,
           appointment,
-          message: `Appointment '${appointment.id}' has been successfully cancelled.`,
+          message:
+            appointment.status === "cancelled"
+              ? `Appointment '${appointment.id}' has been successfully cancelled.`
+              : `Cancellation for appointment '${appointment.id}' is being finalized; the slot stays reserved until the calendars confirm.`,
         });
       }
 

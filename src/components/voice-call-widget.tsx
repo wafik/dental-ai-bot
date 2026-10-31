@@ -59,7 +59,7 @@ export function VoiceCallWidget() {
                 {getStatusBadge()}
               </CardTitle>
               <CardDescription className="text-xs">
-                Two-way natural voice call powered by WebRTC and OpenAI Realtime
+                Two-way natural voice call with the appointment assistant
               </CardDescription>
             </div>
           </div>

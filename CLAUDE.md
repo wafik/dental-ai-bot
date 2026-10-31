@@ -32,8 +32,9 @@ This repository contains the AI-driven dental appointment booking application (F
 
 ## 4. UI & Form Standards
 - **Toast Notifications**: Use `sonner` (`toast` from `sonner`).
-- **Components**: Reusable searchable dropdown / combobox, password inputs with visibility toggle eye, accessible dialogs.
-- **Form Validation**: Realtime validation with Zod schemas.
+- **Components**: Reusable searchable dropdown / combobox, accessible dialogs.
+- **Password / Secret Inputs (MANDATORY)**: Every password, admin key, API key, token, or other credential field MUST render through the shared `SecretInput` component (`src/components/admin/secret-input.tsx`), never as a raw `<Input type="password">`. It provides the eye / eye-off visibility toggle, `autoComplete="new-password"`, spellcheck off, and the write-only "Configured" affordance. Do not re-implement the toggle inline; extend `SecretInput` instead.
+- **Form Validation (MANDATORY)**: Every text and password input MUST validate against a Zod schema on every change and MUST render its message directly below the field. Build the field from the shadcn `Field` primitives (`Field`, `FieldLabel`, `FieldError` from `src/components/ui/field.tsx`) with `data-invalid` on the `Field`, `aria-invalid` + `aria-describedby` on the input, and the message inside `FieldError` — it already carries `role="alert"` and destructive styling. Put the schemas in `src/utils/form-validation.ts` (shared with the route's server-side schema where one exists) and derive messages with `collectFieldErrors`. Never duplicate a rule inline or validate only on submit; shown messages are gated on blur/submit where flagging a pristine empty field would be noise, and invalid fields block the submit/save/test buttons.
 - **Styling**: Tailwind v4 semantic tokens (`bg-background`, `text-foreground`, etc.), flex with `gap-*` (avoid `space-x-*` / `space-y-*`).
 
 ## 5. Calendar Integration Rules (Day 2+)

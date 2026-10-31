@@ -1,31 +1,24 @@
-export type VoiceSessionConfig = {
-  model: string;
-  voice: string;
-  modalities: Array<"text" | "audio">;
-  instructions: string;
-  tools?: unknown[];
-  temperature?: number;
-  inputAudioTranscription?: {
-    model: string;
-  };
-  turnDetection?: {
-    type: "server_vad";
-    threshold?: number;
-    prefixPaddingMs?: number;
-    silenceDurationMs?: number;
-  } | null;
-};
+export type VoiceProviderId = "gemini-live" | "openai-compatible";
+
+/** A tool already shaped for the provider's wire protocol. */
+export type VoiceToolDefinition = Record<string, unknown>;
 
 export type VoiceSessionResponse = {
+  provider: VoiceProviderId;
   sessionId: string;
-  clientSecret: string;
+  clientSecret?: string;
+  /** WebSocket endpoint the browser connects to (OpenAI-compatible providers). */
+  endpoint?: string;
+  /** Session instructions and tools the browser must apply (OpenAI-compatible only). */
+  instructions?: string;
+  tools?: VoiceToolDefinition[];
   model: string;
-  voice: string;
+  voice?: string;
   expiresAt?: number;
 };
 
 export type VoiceProvider = {
-  createSession(customConfig?: Partial<VoiceSessionConfig>): Promise<VoiceSessionResponse>;
+  createSession(): Promise<VoiceSessionResponse>;
 };
 
 export class VoiceProviderError extends Error {

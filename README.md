@@ -7,7 +7,7 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-blue?logo=typescript)](https://www.typescriptlang.org)
 [![Playwright](https://img.shields.io/badge/Playwright-E2E%20Tested-green?logo=playwright)](https://playwright.dev)
 
-A modern, production-grade conversational AI assistant designed for dental clinics. Enables patients to check availability, schedule appointments, and inquire about treatments using **two-way real-time voice calls (WebRTC)** and **interactive text chat**, backed by **authoritative dentist qualification rules** and **bidirectional calendar sync** with both **Google Calendar** and **Microsoft Outlook**.
+A modern, production-grade conversational AI assistant designed for dental clinics. Enables patients to check availability, schedule appointments, and inquire about treatments using **two-way real-time voice calls** (WebSocket streaming, provider-agnostic) and **interactive text chat**, backed by **authoritative dentist qualification rules** and **bidirectional calendar sync** with both **Google Calendar** and **Microsoft Outlook**.
 
 ---
 
@@ -19,7 +19,7 @@ A modern, production-grade conversational AI assistant designed for dental clini
 
 ## 📸 Interface Screenshots
 
-| 💬 AI Text Chat | 🎙️ WebRTC Voice Assistant |
+| 💬 AI Text Chat | 🎙️ Real-Time Voice Assistant |
 | :---: | :---: |
 | ![AI Chat Portal](docs/screenshots/01-ai-chat-portal.png) | ![Voice Call Widget](docs/screenshots/02-voice-call-widget.png) |
 | **📅 Dentist Live Schedules** | **🩺 Services Catalog & Qualifications** |
@@ -52,16 +52,17 @@ dental-ai-bot/
 │   │   ├── page.tsx              # Unified clinical portal (Chat, Voice, Matrix, Services)
 │   │   └── api/v1/
 │   │       ├── chat/             # Guarded text chat delivery with rate limiter
-│   │       ├── voice/session/    # Ephemeral WebRTC session token gate
+│   │       ├── voice/session/    # Provider selection + ephemeral Gemini token gate
 │   │       ├── voice/tools/      # Authoritative tool execution for voice events
 │   │       └── appointments/     # Daily schedule query & direct booking API
 │   ├── components/               # UI components (ChatWidget, VoiceWidget, SchedulePreview)
 │   ├── domain/                   # Pure business logic (Dentists, Services, Scheduling engine)
-│   ├── features/voice/           # WebRTC client engine & React hook (VoiceSessionManager)
+│   ├── features/voice/           # VoiceSessionManager, discrete Gemini Live and
+│   │                             #   OpenAI Realtime-compatible transports, shared audio plumbing
 │   ├── providers/
 │   │   ├── ai/                   # Provider-neutral LLM contract & OpenAI adapter
 │   │   ├── calendar/             # Provider-neutral Calendar contract, Google & Outlook adapters
-│   │   └── voice/                # Ephemeral token voice provider contract & Realtime adapter
+│   │   └── voice/                # Voice provider contract, Gemini Live & OpenAI-compatible adapters
 │   ├── repository/               # PostgreSQL persistence (Drizzle ORM) + In-Memory repository
 │   ├── safety/                   # Prompt injection defense, medical deflection & rate limiter
 │   └── services/                 # Chat orchestrator, AppointmentService & tool definitions
@@ -71,13 +72,16 @@ dental-ai-bot/
 ```
 
 ### Key Highlights:
-1. **Zero Client Secret Leakage:** Master API keys (`OPENAI_API_KEY`) never reach client browsers. Voice calls authenticate using ephemeral tokens issued by `/api/v1/voice/session` with under 60-second validity.
+1. **Zero Client Secret Leakage:** Master API keys never reach client browsers. With Gemini Live the server mints a short-lived single-use token via `/api/v1/voice/session`; with an OpenAI Realtime-compatible endpoint there is no token to mint and the browser connects to the configured WebSocket directly.
 2. **Dual-Calendar Parity:** Unified `CalendarProvider` contract synchronizes bookings with **Google Calendar (API v3)** and **Microsoft Outlook (Microsoft Graph)** with canonical RFC3339 UTC timestamps.
 3. **Enterprise Safety & Guardrails:** 
    - `sanitizeUserInput`: Intercepts prompt injections (`DAN`, `ignore previous instructions`, `leak system prompt`).
    - Medical Advice Deflection: Automatically deflects medical diagnosis and prescription requests with clinical disclaimers before LLM token consumption.
    - `SlidingWindowRateLimiter`: In-memory IP-based rate limiting guarding API endpoints against quota abuse.
-4. **PostgreSQL & Drizzle ORM:** Atomic concurrency control preventing race conditions and double-booking. Includes an offline `InMemoryAppointmentRepository` for zero-dependency CI testing.
+4. **PostgreSQL & Drizzle ORM:** Booking reservations are guarded by a PostgreSQL
+   transaction-scoped advisory lock per dentist/date plus an overlap check, so two concurrent
+   requests cannot both reserve an overlapping slot. Includes an offline
+   `InMemoryAppointmentRepository` for zero-dependency CI testing.
 
 ---
 
@@ -110,7 +114,66 @@ Configure your API keys as needed (mock adapters run out-of-the-box for offline 
 ```env
 OPENAI_API_KEY="sk-proj-your-openai-api-key"
 CLINIC_TIMEZONE="Asia/Jakarta"
-CALENDAR_PROVIDER="google" # or "outlook"
+CALENDAR_PROVIDER="both" # or "none" for local-only mode
+KOKORO_TTS_BASE_URL="http://localhost:8880/v1"
+KOKORO_TTS_VOICE="af_heart"
+
+# Voice: pick one. GEMINI_API_KEY wins when both are set.
+GEMINI_API_KEY="your-gemini-api-key"
+# OPENAI_COMPATIBLE_VOICE_URL="ws://127.0.0.1:8765/v1/realtime"
+```
+
+Voice has two implementations behind one contract. With `GEMINI_API_KEY` set, the server mints a
+single-use Gemini Live token and the browser connects to the constrained Gemini socket. With only
+`OPENAI_COMPATIBLE_VOICE_URL` set, the browser connects straight to that OpenAI Realtime GA endpoint
+(a self-hosted speech-to-speech server, OpenAI itself, or another compatible provider) — no token is
+minted because there is none to mint. The role and the appointment tools are supplied by the server
+in both cases, so the client cannot widen the assistant's scope. `GET /api/v1/voice/session` reports
+which provider is active; the browser uses it to choose a transport.
+
+Every booking is written to **both** Google Calendar and Outlook. Calendar resolution is
+fail-closed: with `CALENDAR_PROVIDER="both"` (the default), a missing provider credential block or a
+missing per-dentist calendar ID makes the app throw instead of silently skipping a calendar. Use
+`CALENDAR_PROVIDER="none"` only for local development without external calendars.
+
+If a provider write fails, the appointment stays `pending`, its slot stays blocked, and the
+per-provider work is recorded for retry. Point an external scheduler at
+`POST /api/v1/admin/reconcile-calendar` with the `CALENDAR_RECONCILE_TOKEN` bearer token to drain
+retries with backoff; see [docs/CALENDAR_SETUP.md](docs/CALENDAR_SETUP.md#6-retrying-failed-writes).
+
+Text chat reads new assistant replies aloud by default. Patients can turn **Auto-read** off in the
+chat header or use a reply's **Read aloud** button. Text-to-speech uses a separately deployed
+Kokoro-FastAPI service exposing the OpenAI-compatible `POST /v1/audio/speech` endpoint. The URL is
+used by the Next.js server and must be reachable from that server, not from the patient's browser.
+When Kokoro is unavailable, chat replies still appear and can be retried later; generated audio is
+not stored by the app. See the [clinic guide](docs/EXTERNAL_CLIENT_GUIDE.md#optional-kokoro-text-to-speech-service)
+for setup details.
+
+### 2b. Admin Console Setup (production)
+
+Provider credentials can be managed from `/admin` instead of environment variables.
+Generate the deployment secrets once and keep them outside the repository:
+
+```bash
+bun run hash:admin-password "choose-a-strong-password"   # -> ADMIN_PASSWORD_HASH
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"  # SETTINGS_ENCRYPTION_KEY
+bun run db:migrate
+```
+
+Then open [http://localhost:3000/admin](http://localhost:3000/admin). Stored credentials are
+write-only: the API returns only configured status, and the eye toggle reveals only the value
+currently being typed. Environment variables remain a bootstrap fallback for any credential not
+entered in the admin console.
+
+For Google Calendar, either paste the **Service Account Email** and **Service Account Private Key**
+from your key JSON, or the delegated Client ID / Client Secret / Refresh Token. Service-account auth
+takes precedence when both are present. A service account only sees calendars explicitly shared with
+its email, so share each dentist calendar with it first.
+
+To bootstrap the service-account credentials from a key file instead of the UI:
+
+```bash
+bun run import:google-service-account path/to/service-account.json
 ```
 
 ### 3. Running Locally
@@ -121,6 +184,45 @@ bun run dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000) in your browser to experience the clinical portal.
+
+#### Running voice against a local speech-to-speech model
+
+Voice does not have to touch a cloud vendor. Any server that speaks the OpenAI Realtime GA protocol
+over WebSocket can back the widget. The reference option is
+[huggingface/speech-to-speech](https://github.com/huggingface/speech-to-speech) — an open pipeline
+(Silero VAD → Parakeet TDT → Qwen3.5 → Qwen3-TTS) that runs entirely on your own machine. Any
+equivalent self-hosted stack works the same way.
+
+1. Start the server. For the Hugging Face pipeline:
+
+   ```bash
+   python3 -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\Activate.ps1
+   pip install speech-to-speech
+   speech-to-speech serve --host 127.0.0.1 --port 8765
+   ```
+
+   It speaks the OpenAI Realtime protocol at `ws://127.0.0.1:8765/v1/realtime`. On NVIDIA hardware
+   budget about 16 GB of VRAM; `speech-to-speech local` starts server and microphone client together
+   if you want to sanity-check the pipeline before pointing this app at it.
+2. Empty `GEMINI_API_KEY` in `.env.local` (it wins when set) and keep only:
+
+   ```env
+   OPENAI_COMPATIBLE_VOICE_URL="ws://127.0.0.1:8765/v1/realtime"
+   OPENAI_COMPATIBLE_VOICE_MODEL="gpt-realtime"
+   ```
+
+3. Reload the page and start a call.
+
+Things to know while testing locally:
+
+- The loopback URL is reachable only from the machine running the browser. Point
+  `OPENAI_COMPATIBLE_VOICE_URL` at a LAN or tunnel address to test from a phone.
+- A local server typically allows **one** concurrent session; a second call is rejected with
+  "Voice provider has no free session slots".
+- Voice activity detection ignores tones and sine waves. Test with real speech through a real
+  microphone, not with a generated beep.
+- Some local servers want reasoning disabled on the LLM (e.g. `reasoning_effort: "none"`) or replies
+  take seconds per turn. That is a server setting, not an app setting.
 
 ---
 
@@ -138,10 +240,10 @@ bun run check
 # 3. Lint code (Oxlint - zero warnings)
 bun run lint
 
-# 4. Unit & Integration Test Suite (181 tests passing in ~200ms)
+# 4. Unit & Integration Test Suite
 bun test
 
-# 5. Playwright End-to-End Tests
+# 5. Playwright End-to-End Tests (starts a disposable PostgreSQL container; Docker required)
 bun run test:e2e
 
 # 6. Next.js Production Build
@@ -150,20 +252,23 @@ bun run build
 
 ---
 
-## 💰 Production Financial Cost Analysis
+## 💰 Production Cost Analysis
 
-A concrete monthly cost model for an active dental clinic handling **1,000 voice calls** (3,000 spoken minutes) and **3,000 chat interactions** (15,000 turns):
+Cost depends entirely on which providers you run.
 
-| Service Category | Monthly Cost (USD) | Notes |
-| :--- | :--- | :--- |
-| **Conversational Voice AI (OpenAI Realtime WebRTC)** | $555.00 | 3,000 spoken minutes @ $0.06 in / $0.24 out |
-| **Text Chat LLM (GPT-4o-mini)** | $4.05 | 18M input tokens / 2.25M output tokens |
-| **Application Hosting (Vercel / AWS ECS)** | $20.00 | Serverless Next.js edge runtime |
-| **Managed Database (PostgreSQL / Neon / Supabase)** | $15.00 | Dedicated instance with automated backups |
-| **Calendar APIs (Google Cloud & MS Graph)** | $5.00 | Free quotas cover up to 1M queries/day |
-| **TOTAL ESTIMATED MONTHLY COST** | **$599.05** | **~$0.56 per voice call / $0.0014 per chat** |
+| Component | Cost driver |
+| :--- | :--- |
+| **Realtime Voice AI** | Typically the dominant cost when using a hosted provider (per audio-minute in and out). Running a local speech-to-speech model removes this line item, leaving only electricity and your own GPU. |
+| **Text Chat LLM** | Per-token input/output on the configured model. |
+| **Application Hosting** | Serverless plan or container per the chosen platform. |
+| **Managed Database** | PostgreSQL instance with automated backups. |
+| **Calendar APIs** | Google Calendar and Microsoft Graph both have free quotas that comfortably cover a single clinic. |
 
-> For comprehensive cost calculations, trade-offs, and HIPAA/GDPR considerations, see [docs/INTERNAL_ARCHITECTURE_AND_COST.md](docs/INTERNAL_ARCHITECTURE_AND_COST.md).
+No monthly figure is quoted here on purpose: the voice line dominates any estimate, and it swings
+from a per-minute provider bill to zero once you deploy a local model. Price the deployment against
+the providers you actually configure. The historical per-minute model, with its assumptions stated
+explicitly, is kept in [docs/INTERNAL_ARCHITECTURE_AND_COST.md](docs/INTERNAL_ARCHITECTURE_AND_COST.md)
+for reference.
 
 ---
 
@@ -173,6 +278,15 @@ A concrete monthly cost model for an active dental clinic handling **1,000 voice
 * [docs/INTERNAL_ARCHITECTURE_AND_COST.md](docs/INTERNAL_ARCHITECTURE_AND_COST.md) — System architecture, Mermaid diagrams, financial analysis, and security decisions.
 * [docs/EXTERNAL_CLIENT_GUIDE.md](docs/EXTERNAL_CLIENT_GUIDE.md) — Non-technical practice manager guide, Google/Outlook connection steps, and FAQ.
 * [docs/CALENDAR_SETUP.md](docs/CALENDAR_SETUP.md) — Cloud OAuth setup for Google Cloud Platform and Microsoft Entra ID.
+
+### Downloadable Deliverables
+
+These are pre-rendered from the HTML sources above and regenerated with `bun run build:pdf` and
+`bun run build:slides`:
+
+* [BrightSmile_Dental_AI_Executive_Summary.pdf](docs/BrightSmile_Dental_AI_Executive_Summary.pdf) — 2-page non-technical brief (source: [HTML](docs/BrightSmile_Dental_AI_Executive_Summary.html)).
+* [BrightSmile_Dental_AI_Technical_Spec.pdf](docs/BrightSmile_Dental_AI_Technical_Spec.pdf) — 2-page engineering spec (source: [HTML](docs/BrightSmile_Dental_AI_Technical_Spec.html)).
+* [BrightSmile_Dental_AI_Presentation.pptx](docs/BrightSmile_Dental_AI_Presentation.pptx) — 8-slide deck (source: `slides/compile.js`).
 
 ---
 

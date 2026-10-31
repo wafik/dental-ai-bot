@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { InMemoryAppointmentRepository } from "@/repository/in-memory-appointment-repository";
+import { getRuntimeAppointmentRepository } from "@/repository/runtime-repositories";
+import { getRuntimeCalendarProvider } from "@/services/calendar-provider-cache";
 import { AppointmentService } from "@/services/appointment-service";
 import type { AppointmentRepository } from "@/repository/appointment-repository";
 import {
@@ -14,19 +15,8 @@ export type AppointmentsRouteDeps = {
   appointmentService?: AppointmentService;
 };
 
-let defaultRepository: AppointmentRepository | null = null;
-let defaultService: AppointmentService | null = null;
-
-function getDefaultDeps(): {
-  repository: AppointmentRepository;
-  appointmentService: AppointmentService;
-} {
-  if (!defaultRepository || !defaultService) {
-    defaultRepository = new InMemoryAppointmentRepository();
-    defaultService = new AppointmentService(defaultRepository);
-  }
-  return { repository: defaultRepository, appointmentService: defaultService };
-}
+/** Unauthenticated endpoint: unexpected failures must not reveal internals. */
+const GENERIC_ERROR = "Internal server error";
 
 const BookAppointmentSchema = z.object({
   patientName: z.string().min(2, "Patient name must be at least 2 characters"),
@@ -38,12 +28,17 @@ const BookAppointmentSchema = z.object({
 });
 
 export function createAppointmentsHandlers(deps: AppointmentsRouteDeps = {}) {
-  const getDeps = () => {
-    const defaults = getDefaultDeps();
-    return {
-      repository: deps.repository || defaults.repository,
-      appointmentService: deps.appointmentService || defaults.appointmentService,
-    };
+  // Production defaults resolve the PostgreSQL-backed repository and the
+  // provider-configured service lazily, per request. There is deliberately no
+  // in-memory fallback; tests inject their own dependencies instead.
+  const getRepository = () => deps.repository ?? getRuntimeAppointmentRepository();
+
+  const getAppointmentService = async (repository: AppointmentRepository) => {
+    if (deps.appointmentService) {
+      return deps.appointmentService;
+    }
+    const calendarProviders = await getRuntimeCalendarProvider();
+    return new AppointmentService(repository, calendarProviders);
   };
 
   const GET = async (request: Request): Promise<Response> => {
@@ -61,24 +56,35 @@ export function createAppointmentsHandlers(deps: AppointmentsRouteDeps = {}) {
         );
       }
 
-      const { repository } = getDeps();
-      const appointments = await repository.find({
+      // Public listings expose confirmed records only; pending reservations and
+      // failed records stay internal. Reading them needs no calendar provider.
+      const appointments = await getRepository().find({
         date: dateParam,
         status: "confirmed",
       });
 
+      // This endpoint is unauthenticated and feeds the public schedule board, so
+      // patient identity never leaves the server. Only what the board renders is
+      // returned.
       return NextResponse.json(
         {
           success: true,
           date: dateParam,
           totalConfirmed: appointments.length,
-          appointments,
+          appointments: appointments.map((appointment) => ({
+            id: appointment.id,
+            serviceCode: appointment.serviceCode,
+            dentistId: appointment.dentistId,
+            date: appointment.date,
+            startTime: appointment.startTime,
+            endTime: appointment.endTime,
+            status: appointment.status,
+          })),
         },
         { status: 200 },
       );
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-      return NextResponse.json({ success: false, error: message }, { status: 500 });
+    } catch {
+      return NextResponse.json({ success: false, error: GENERIC_ERROR }, { status: 500 });
     }
   };
 
@@ -97,7 +103,8 @@ export function createAppointmentsHandlers(deps: AppointmentsRouteDeps = {}) {
         );
       }
 
-      const { appointmentService } = getDeps();
+      const repository = getRepository();
+      const appointmentService = await getAppointmentService(repository);
       const appointment = await appointmentService.bookAppointment(validation.data);
 
       return NextResponse.json(
@@ -120,8 +127,7 @@ export function createAppointmentsHandlers(deps: AppointmentsRouteDeps = {}) {
           { status: 400 },
         );
       }
-      const message = err instanceof Error ? err.message : String(err);
-      return NextResponse.json({ success: false, error: message }, { status: 500 });
+      return NextResponse.json({ success: false, error: GENERIC_ERROR }, { status: 500 });
     }
   };
 

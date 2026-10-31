@@ -44,6 +44,10 @@ export class InMemorySettingsRepository implements SettingsRepository {
     return results;
   }
 
+  async getAllDentistCalendarMappings(): Promise<DentistCalendarMappingRecord[]> {
+    return [...this.mappings.values()].map((record) => ({ ...record }));
+  }
+
   async upsertDentistCalendarMapping(
     input: UpsertDentistCalendarMappingInput,
   ): Promise<DentistCalendarMappingRecord> {

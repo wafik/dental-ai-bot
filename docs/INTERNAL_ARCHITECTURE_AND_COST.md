@@ -9,7 +9,7 @@
 
 ## 1. Executive Summary & Architecture Overview
 
-The Dental Clinic Conversational AI platform provides an enterprise-grade, omnichannel patient scheduling solution. Patients can book, inquire, reschedule, and verify dental appointments through two-way natural voice calls (WebRTC) and text chat.
+The Dental Clinic Conversational AI platform provides an enterprise-grade, omnichannel patient scheduling solution. Patients can book, inquire, reschedule, and verify dental appointments through two-way natural voice calls (streamed over WebSocket) and text chat.
 
 The architecture enforces strict clinical safety guardrails, provider-agnostic modularity, authoritative backend validation, and bidirectional calendar synchronization with both Google Calendar and Microsoft 365 Outlook.
 
@@ -19,7 +19,7 @@ The architecture enforces strict clinical safety guardrails, provider-agnostic m
 flowchart TB
     subgraph ClientLayer [Client Presentation Layer]
         WebBrowser["Patient Browser (Desktop / Mobile)"]
-        VoiceWidget["WebRTC Voice Client (Opus Audio)"]
+        VoiceWidget["Voice Client (PCM over WebSocket)"]
         ChatWidget["Chat UI (Next.js 16 + React 19)"]
         ScheduleDash["Live Schedule Matrix Dashboard"]
         WebBrowser --> VoiceWidget
@@ -30,7 +30,7 @@ flowchart TB
     subgraph SecurityLayer [Edge & Security Guardrails]
         RateLimiter["Sliding Window Rate Limiter (IP Tracked)"]
         Sanitizer["Prompt Injection & Medical Guardrails"]
-        TokenIssuer["Ephemeral WebRTC Token Gate (/api/v1/voice/session)"]
+        TokenIssuer["Voice Session Gate (/api/v1/voice/session)"]
     end
 
     subgraph AppRouter [Next.js App Router API Delivery]
@@ -65,16 +65,18 @@ flowchart TB
     end
 
     subgraph CloudAPIs [External Cloud Infrastructure]
-        OpenAICloud["OpenAI Realtime / LLM API"]
+        OpenAICloud["OpenAI-compatible Voice Endpoint / LLM API"]
         GoogleCloud["Google Calendar API v3"]
+        GeminiCloud["Gemini Live API"]
         MicrosoftCloud["Microsoft Entra ID / Microsoft Graph"]
     end
 
     %% Wiring
     ChatWidget --> RateLimiter --> Sanitizer --> APIChat --> ChatOrch
-    VoiceWidget -- "1. Get Ephemeral Token" --> TokenIssuer --> APIVoiceSession --> OpenAICloud
-    VoiceWidget -- "2. Direct WebRTC Media" --> OpenAICloud
-    VoiceWidget -- "3. Tool Call via DataChannel" --> APIVoiceTools --> ApptService
+    VoiceWidget -- "1. Select provider + token (Gemini only)" --> TokenIssuer --> APIVoiceSession --> GeminiCloud
+    VoiceWidget -- "2a. Constrained WebSocket (Gemini)" --> GeminiCloud
+    VoiceWidget -- "2b. Direct WebSocket (OpenAI-compatible)" --> OpenAICloud
+    VoiceWidget -- "3. Tool Call" --> APIVoiceTools --> ApptService
     ChatOrch --> ApptService
     
     ApptService --> Repository
@@ -90,17 +92,18 @@ flowchart TB
 
 ### 2.1 Provider-Agnostic AI & Voice Integration
 
-* **Decision:** Implement decoupled contracts (`LLMProvider` and `VoiceProvider`) with standalone adapter implementations.
-* **Why:** Prevents vendor lock-in. While OpenAI Realtime is implemented as the primary WebRTC engine, switching to Gemini Live, ElevenLabs Conversational, Deepgram, or Vapi requires only introducing an adapter conforming to the interface without touching clinical scheduling logic.
-* **Security Guard:** Never expose master API keys to client browsers. The server issues a short-lived ephemeral session token (`client_secret.value`) via `/api/v1/voice/session` with an expiry window of under 60 seconds.
+* **Decision:** Use provider-neutral LLM and server voice contracts. The browser voice session manager delegates media and protocol handling to a transport; each provider supplies its own server adapter and browser transport, and `DefaultVoiceTransport` picks one by asking the session route which provider is configured.
+* **Why:** A different voice provider requires its own server and browser adapters and explicit composition, without changing the generic session manager or clinical scheduling logic. Two voice providers are implemented: Gemini Live (server-minted ephemeral token over a constrained WebSocket) and any OpenAI Realtime GA-compatible endpoint (selected with `OPENAI_COMPATIBLE_VOICE_URL` when `GEMINI_API_KEY` is unset). No new dependency is needed for either: both are plain WebSocket + PCM.
+* **Security Guard:** Never expose master API keys to client browsers. With Gemini the server returns a single-use ephemeral token; with an OpenAI-compatible endpoint there is no credential to hand out, so instead the **role and tools still come from the server** in the session descriptor and the browser applies them verbatim. Either way the client cannot widen the assistant's scope or reach tools the clinic did not grant.
+* **Audio Rate Contract:** The browser player interprets every incoming PCM16 frame at a fixed 24 kHz, and `toPcm16` always emits 16 kHz. Because the OpenAI Realtime schema defaults to 24 kHz *output* but a self-hosted pipeline often speaks 16 kHz natively, the OpenAI-compatible transport declares `audio.output.format = audio/pcm @ 24000` in its `session.update`; without it the server sends 16 kHz and speech plays back 1.5× too fast. Input format is deliberately **not** declared — some compatible servers reject the whole event on an unknown input field, and 16 kHz already matches the client's capture rate. Gemini Live is unaffected: it emits 24 kHz natively.
 
 ### 2.2 Dual-Calendar Parity (Google Calendar + Microsoft Outlook)
 
 * **Decision:** Design a unified `CalendarProvider` interface with RFC3339 UTC normalization (`YYYY-MM-DDTHH:mm:ssZ`).
 * **Why:** Clinics run heterogeneous software stacks. Private practices commonly use Google Workspace, whereas hospital-affiliated clinics standardize on Microsoft 365 / Entra ID.
 * **Implementation Highlights:**
-  * **Google Calendar:** Uses OAuth 2.0 refresh token rotation, in-memory bearer token caching with proactive refresh (5 minutes prior to expiration), and Freebusy API queries (`calendar.freebusy.query`).
-  * **Microsoft Outlook:** Connects to Microsoft Graph `/v1.0/users/{dentist}/calendarView`, handles multi-page `@odata.nextLink` pagination, and converts Microsoft's un-suffixed UTC strings into canonical ISO strings.
+  * **Google Calendar:** Uses OAuth 2.0 refresh token rotation, in-memory bearer token caching with proactive refresh (60 seconds before expiration), and Freebusy API queries (`calendar.freebusy.query`).
+  * **Microsoft Outlook:** Connects to Microsoft Graph `/v1.0/me/calendars/{calendarId}/calendarView` for the configured clinic account, handles multi-page `@odata.nextLink` pagination, and converts Microsoft's un-suffixed UTC strings into canonical ISO strings.
 * **Failure Isolation:** Errors from calendar APIs are wrapped in a redacted `CalendarProviderError`, preventing raw stack traces or leaked tokens from reaching application logs.
 
 ### 2.3 Authoritative Server-Side Validation
@@ -116,6 +119,14 @@ flowchart TB
 ---
 
 ## 3. Workload Assumptions & Monthly Financial Cost Analysis
+
+> **Read this section as a worked example, not a quote.** Every figure below assumes one specific
+> choice: hosted realtime voice billed per audio-minute. That single line is ~93% of the total, so the
+> total is a property of the provider you pick, not of this application. Point the same code at a
+> self-hosted OpenAI Realtime-compatible server (see
+> [huggingface/speech-to-speech](https://github.com/huggingface/speech-to-speech)) and the voice line
+> collapses to GPU time and electricity. Rates were illustrative at the time of writing and have not
+> been re-verified; substitute current pricing before quoting a clinic.
 
 ### 3.1 Workload Model
 
@@ -133,12 +144,12 @@ To provide a concrete, realistic financial forecast for an active dental clinic,
 
 ### 3.2 Itemized Monthly Cost Breakdown
 
-#### A. Conversational Voice AI (OpenAI Realtime API / WebRTC)
-*Audio inputs and outputs billed per minute / token equivalent (rates as of Q3/Q4 2026):*
+#### A. Conversational Voice AI (Gemini Live API)
+*Illustrative estimate using OpenAI Realtime per-minute rates as a stand-in; replace with current Gemini Live pricing before quoting:*
 * **Realtime Audio Input:** $0.06 / minute × 3,000 minutes = **$180.00**
 * **Realtime Audio Output:** $0.24 / minute × 1,500 minutes (assistant speaks ~50% of call time) = **$360.00**
 * **Text Tokens (Function Calling / Context):** ~1.5M tokens/mo = **$15.00**
-* *Subtotal Voice:* **$555.00 / month**
+* *Subtotal Voice:* **$555.00 / month (illustrative)**
 
 #### B. Text Chat AI (GPT-4o-mini / Claude 3.5 Haiku)
 *Text conversational model with prompt caching:*
@@ -186,24 +197,75 @@ To provide a concrete, realistic financial forecast for an active dental clinic,
 * **Cost per Confirmed Booking (~650 bookings):** **$0.92 per patient booked**
 
 *Comparison with Human Staffing:*  
-A full-time dental receptionist in the US/UK costs between $3,000 and $4,500/month for 40 hours/week. The AI solution operates **24/7/365 with zero hold times, handles concurrent callers, and costs less than 20% of a single human receptionist.**
+A full-time dental receptionist in the US/UK costs between $3,000 and $4,500/month for 40 hours/week. The AI solution operates 24/7/365 with zero hold times and handles concurrent callers. The saving above is arithmetic between those two figures and assumes the voice bill stays at the hosted per-minute rate; a self-hosted voice model widens it, a busier clinic narrows it.
+
+#### 3.3.1 Managed Cloud vs. Self-Hosted Edge (Cost & Latency)
+
+Both columns run the same application code. The choice is configuration — `GEMINI_API_KEY` (managed)
+vs. `OPENAI_COMPATIBLE_VOICE_URL` (self-hosted) — not a fork.
+
+| Dimension | Managed Cloud (`gemini-live`) | Self-Hosted Edge (`openai-compatible`) |
+| :--- | :--- | :--- |
+| **Billing unit** | Per audio-minute in and out; every spoken second is metered. | GPU time and electricity. No request is metered or capped. |
+| **Modeled footprint at §3.1 volume** | The **$555.00 / month (illustrative)** voice line above — 92.6% of the total. | That line collapses; only hardware depreciation and power remain. |
+| **Latency profile** | Vendor inference plus a wide-area round trip from the clinic to a provider region. `< 300 ms` is a modeled target for this class of provider, **not a measurement of this deployment**. | Silero VAD → streaming STT → LLM → TTS on one local GPU, no vendor hop. Degrades with larger models and GPU load, not with network distance. |
+| **Measurement** | Only the vendor reports turn timings; this app sees WebSocket frame arrival. | The `speech-to-speech` server logs per-response STT, LLM, and first-TTS-audio durations — the only honest source for a number; read it on the serving hardware. |
+| **Capacity & failure** | Provider concurrency quota; an outage is outside the operator's control. | GPU memory, typically one concurrent session per instance; an OOM is a process to restart. |
+| **Credentials & data path** | Server mints a single-use ephemeral token per session; audio leaves the clinic network. | Nothing is minted — no metered account to authorize; audio stays on the operator's network end to end. |
+
+No latency figure in this document was produced by a benchmark run of this application. The
+self-hosted path is wired and tested with mocked transports; measure it on the GPU that will serve
+patients before quoting either number to a clinic.
+
+### 3.4 Build and Maintenance Cost
+
+*Illustrative planning estimates, not verified operating figures.* They assume a single
+forward-deployed engineer building on the shipped codebase and are stated in engineering days at a
+blended rate; substitute your own rate before quoting.
+
+**Build cost (one-time)**
+
+| Phase | Scope | Estimate |
+| :--- | :--- | :--- |
+| Core app | Next.js App Router skeleton, chat UI, scheduling domain, calendar contracts | 8 days |
+| Calendar integration | Google + Outlook adapters, dual writes, per-provider retry state, reconciliation endpoint | 6 days |
+| Voice | Gemini Live adapter + token minting, OpenAI Realtime-compatible adapter and transport, shared PCM audio plumbing, server-mediated tool calls | 4 days |
+| Admin console | Encrypted secret store, sessions, settings UI, connection tests | 4 days |
+| Safety | Prompt guardrails, input sanitizer, rate limiting, tool argument validation | 3 days |
+| Tests | Unit, contract, route, and Playwright suites (all provider calls mocked) | 5 days |
+| Documentation | Internal + external guides | 2 days |
+| **Total** | | **~32 engineer-days** |
+
+**Ongoing maintenance**
+
+| Activity | Cadence | Estimate |
+| :--- | :--- | :--- |
+| Dependency and security patching | Monthly | 0.5 day/month |
+| Provider API changes (Google, Graph, OpenAI) | As announced | 0.25 day/month amortized |
+| Reconciliation review | Per the retry endpoint's `needs_manual_reconciliation` count | 0.5 day/month at the modeled volume |
+| Incident response | As needed | 1 day/month reserved |
+
+Roughly **2.25 engineer-days per month** in steady state, before infrastructure and API spend. The
+largest recurring risk is provider API drift, which the adapter boundary confines to one file per
+provider. Voice has two implemented providers (Gemini Live and OpenAI Realtime-compatible), so adding
+a third would mean a new server adapter plus a new browser transport; budget 3–4 days per provider.
 
 ---
 
 ## 4. Security, Compliance & Patient Privacy
 
 ### 4.1 HIPAA & GDPR Alignment
-1. **Zero Secret Leakage:** Master API keys, OAuth client secrets, and refresh tokens are stored exclusively in server environment variables and never exposed to the client bundle.
+1. **Zero Secret Leakage:** Credentials are never sent to the client bundle. They are either encrypted at rest in `encrypted_secrets` (AES-256-GCM, managed through the admin console) or supplied as server-side environment variables for bootstrap. Admin APIs return only `isConfigured` metadata and never the stored value; secret inputs are write-only.
 2. **Business Associate Agreements (BAA):** For clinical HIPAA compliance, clinic deployments must execute an enterprise BAA with:
    * OpenAI (Enterprise zero-data-retention tier)
    * Cloud hosting provider (AWS or Vercel Enterprise)
    * Database provider (AWS RDS / Supabase HIPAA add-on)
-3. **Data Minimization:** Audio streams transmitted over WebRTC are ephemeral and processed in-memory. Conversations are not written to persistent storage unless explicit consent is logged.
+3. **Data Minimization:** Audio is streamed to the configured voice provider over WebSocket and processed in-memory; it is not transcribed by this application. Conversations are not written to persistent storage unless explicit consent is logged.
 
 ### 4.2 Medical Guardrails & Scope Limitation
 * **Strict Deflection:** Inquiries attempting to elicit dental diagnoses, prescription advice, antibiotic dosages, or emergency triage trigger automatic deflection:
   > *"I am an automated appointment scheduling assistant and cannot provide dental diagnoses or prescribe medications. Please consult with our licensed dentists during your appointment, or visit an urgent care center if you are experiencing severe pain or bleeding."*
-* **Prompt Injection Defenses:** The input sanitizer intercepts jailbreak attempts (`DAN`, `ignore previous instructions`, `system prompt leak`) before forwarding queries to the LLM.
+* **Prompt Injection Defenses:** The server owns chat system instructions and accepts only bounded user and assistant text as public history. This history is untrusted: assistant messages may be fabricated and do not prove prior tool execution. Internal tool messages remain server-owned. The input sanitizer detects some injection patterns, but it is not a complete defense; scope adherence and English-only responses remain probabilistic model behavior.
 
 ### 4.3 Production Settings & Secrets Management (Database vs Environment Variables)
 
@@ -219,13 +281,13 @@ In production enterprise deployments, configuration and credentials are bifurcat
 | **Multi-Tenant OAuth Tokens** (Future SaaS Phase) | **Database (Encrypted)** | Encrypted table column (`AES-256-GCM`) | For multi-clinic platforms where clinics connect calendars via OAuth; tokens must be encrypted-at-rest with a KMS master key. |
 
 *Factory Resolution Flow:*
-`resolveCalendarProvider()` in `src/providers/calendar/calendar-factory.ts` retrieves active calendar mappings from `SettingsRepository` (`dentist_calendar_mappings` table) with graceful fallback to `.env`, dynamically constructing `GoogleCalendarAdapter` or `OutlookCalendarAdapter`.
+`resolveCalendarProvider()` in `src/providers/calendar/calendar-factory.ts` reads the `CALENDAR_PROVIDER` setting from `SettingsRepository` (falling back to the environment variable), then **builds both** a `GoogleCalendarAdapter` and an `OutlookCalendarAdapter` — a clinic booking must reach both calendars. It is fail-closed: if either provider is missing credentials or any of the three dentist mappings, the factory throws listing what is missing instead of silently skipping a calendar. The only local-only mode is an explicit `CALENDAR_PROVIDER=none`. Per provider, credentials resolve field by field from the encrypted `encrypted_secrets` table (managed in the admin console) and fall back to environment variables for bootstrap/migration; dentist calendar IDs come from `dentist_calendar_mappings` rows with the same environment fallback.
 
 ---
 
 ## 5. Failure Recovery & Concurrency Handling
 
 1. **Race Conditions & Double-Booking:** When two patients request the same dentist and time slot simultaneously:
-   * The database enforces a unique constraint / row lock on `(dentist_id, appointment_date, start_time)`.
-   * Only one transaction succeeds; the second receives an explicit conflict error and the assistant immediately offers the next nearest available slot.
-2. **Calendar Provider Downtime:** If Google or Outlook returns HTTP 503 or network timeouts, the system records the booking in the PostgreSQL database with status `pending_sync`, logs an audit incident, and schedules background reconciliation.
+   * Booking runs inside a PostgreSQL transaction that acquires a transaction-scoped advisory lock keyed by `(dentist_id, date)`, re-checks interval overlap against `pending` and `confirmed` rows, then inserts a `pending` reservation.
+   * Only one transaction reserves the slot; the second receives `SlotUnavailableError` and the assistant immediately offers the next nearest available slot.
+2. **Calendar Provider Downtime:** A provider failure never produces a false success. The appointment stays `pending` (booking) or `cancelling` (cancellation) and keeps its slot blocked, while one `appointment_calendar_syncs` row per provider records its own status, attempt count, and next retry time. Google creates are retried safely because the event ID is caller-supplied and `PUT`-upserted; an ambiguous Microsoft Graph create is flagged `needs_manual_reconciliation` instead of being retried blindly. Deletes are idempotent at both providers. Retries run through `POST /api/v1/admin/reconcile-calendar`, which claims due rows with a lease so overlapping scheduler runs cannot process the same row twice. Because PostgreSQL and the calendar provider cannot share a transaction, the guarantee is durable eventual convergence, not distributed atomicity.

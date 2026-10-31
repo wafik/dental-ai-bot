@@ -117,6 +117,8 @@ describe("CalendarProvider contract type check", () => {
           end: interval.end,
         };
       }
+
+      async deleteEvent(_input: { dentistId: string; eventId: string }): Promise<void> {}
     }
 
     const provider: CalendarProvider = new FakeProvider();
@@ -139,5 +141,9 @@ describe("CalendarProvider contract type check", () => {
 
     expect(event.id).toBe("evt-senior-1");
     expect(event.start).toBe("2026-10-25T11:00:00.000Z");
+
+    await expect(
+      provider.deleteEvent({ dentistId: "senior-1", eventId: "evt-senior-1" }),
+    ).resolves.toBeUndefined();
   });
 });

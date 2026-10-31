@@ -15,6 +15,7 @@ import {
 class MockCalendarProvider implements CalendarProvider {
   busyIntervals: BusyInterval[] = [];
   createdEvents: CalendarEventInput[] = [];
+  deletedEvents: Array<{ dentistId: string; eventId: string }> = [];
 
   async getBusyIntervals(_input: {
     dentistId: string;
@@ -31,6 +32,10 @@ class MockCalendarProvider implements CalendarProvider {
       start: input.start,
       end: input.end,
     };
+  }
+
+  async deleteEvent(input: { dentistId: string; eventId: string }): Promise<void> {
+    this.deletedEvents.push(input);
   }
 }
 
@@ -118,7 +123,7 @@ describe("executeAppointmentTool", () => {
   beforeEach(() => {
     repository = new InMemoryAppointmentRepository();
     calendarProvider = new MockCalendarProvider();
-    service = new AppointmentService(repository, calendarProvider);
+    service = new AppointmentService(repository, { google: calendarProvider });
   });
 
   describe("list_services execution", () => {
@@ -378,6 +383,28 @@ describe("executeAppointmentTool", () => {
 
       expect(parsed.success).toBe(false);
       expect(parsed.error).toBe("Unknown tool: some_unknown_tool");
+    });
+
+    it("rejects oversized model-supplied fields before they reach a calendar event", async () => {
+      const rawResult = await executeAppointmentTool(service, "book_appointment", {
+        serviceCode: "A",
+        dentistId: "junior",
+        date: "2026-10-25",
+        startTime: "09:00",
+        patientName: "x".repeat(5000),
+        patientPhone: "08123456789",
+      });
+      const parsed = JSON.parse(rawResult);
+
+      expect(parsed.success).toBe(false);
+      expect(parsed.error).toContain("patientName");
+    });
+
+    it("treats a blank or wrong-typed field as missing", async () => {
+      const rawResult = await executeAppointmentTool(service, "cancel_appointment", {
+        appointmentId: "   ",
+      });
+      expect(JSON.parse(rawResult).error).toContain("appointmentId");
     });
   });
 });

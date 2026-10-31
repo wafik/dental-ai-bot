@@ -1,3 +1,5 @@
+import { CHAT_USER_MESSAGE_MAX_LENGTH } from "@/utils/form-validation";
+
 export type SanitizerResult = {
   isValid: boolean;
   sanitized: string;
@@ -5,7 +7,7 @@ export type SanitizerResult = {
   deflectionMessage?: string;
 };
 
-const MAX_INPUT_LENGTH = 1000;
+const MAX_INPUT_LENGTH = CHAT_USER_MESSAGE_MAX_LENGTH;
 
 const PROMPT_INJECTION_PATTERNS = [
   /ignore\s+(all\s+|any\s+)?(previous|prior|above)\s+instructions/i,

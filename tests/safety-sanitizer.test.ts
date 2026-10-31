@@ -18,14 +18,14 @@ describe("Safety Input Sanitizer", () => {
     expect(result.sanitized).toBe("what services do you offer?");
   });
 
-  it("flags inputs exceeding 1000 characters", () => {
-    const hugeInput = "a".repeat(1005);
+  it("flags inputs exceeding 2000 characters", () => {
+    const hugeInput = "a".repeat(2001);
     const result = sanitizeUserInput(hugeInput);
 
     expect(result.isValid).toBe(false);
     expect(result.flaggedReason).toBe("EXCESSIVE_LENGTH");
     expect(result.deflectionMessage).toContain(
-      "Message exceeds maximum allowed length of 1,000 characters",
+      "Message exceeds maximum allowed length of 2,000 characters",
     );
   });
 

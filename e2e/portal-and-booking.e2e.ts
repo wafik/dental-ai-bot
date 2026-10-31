@@ -32,9 +32,7 @@ test.describe("Dental Clinic AI Receptionist - E2E User Journey", () => {
     await expect(voiceButton).toBeVisible();
     await voiceButton.click();
 
-    await expect(page.locator("body")).toContainText(
-      "Two-way natural voice call powered by WebRTC",
-    );
+    await expect(page.locator("body")).toContainText("Two-way natural voice call");
     await expect(page.getByRole("button", { name: /Start Voice Call/i })).toBeVisible();
 
     await page.screenshot({

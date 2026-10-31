@@ -19,6 +19,9 @@
 /.next/
 /out/
 
+# generated assets
+/slides/output/
+
 # Local workflow artifacts
 /.superpowers/
 /.claude/
@@ -39,6 +42,11 @@ yarn-error.log*
 # env files (can opt-in for committing if needed)
 .env*
 !.env.example
+
+# cloud credential keys
+*service-account*.json
+warungku-*.json
+docs/*.json
 
 # vercel
 .vercel

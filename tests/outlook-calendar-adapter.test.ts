@@ -402,4 +402,58 @@ describe("OutlookCalendarAdapter", () => {
       ).rejects.toThrow(CalendarProviderError);
     });
   });
+
+  describe("deleteEvent", () => {
+    it("deletes the encoded event and resolves", async () => {
+      let capturedUrl = "";
+      let capturedMethod = "";
+
+      const mockFetch = createMockFetch({
+        apiHandler: async (req) => {
+          capturedUrl = req.url;
+          capturedMethod = req.method;
+          return new Response(null, { status: 204 });
+        },
+      });
+
+      const adapter = new OutlookCalendarAdapter(dummyConfig, mockFetch as unknown as typeof fetch);
+      await adapter.deleteEvent({ dentistId: "senior-1", eventId: "AAMk/with+slash" });
+
+      expect(capturedMethod).toBe("DELETE");
+      expect(capturedUrl).toBe(
+        `https://graph.microsoft.com/v1.0/me/calendars/senior-1-calendar-id/events/${encodeURIComponent("AAMk/with+slash")}`,
+      );
+    });
+
+    it("treats HTTP 404 as an already-deleted success", async () => {
+      const mockFetch = createMockFetch({
+        apiHandler: async () => new Response("Not Found", { status: 404 }),
+      });
+
+      const adapter = new OutlookCalendarAdapter(dummyConfig, mockFetch as unknown as typeof fetch);
+      await expect(
+        adapter.deleteEvent({ dentistId: "junior", eventId: "missing" }),
+      ).resolves.toBeUndefined();
+    });
+
+    it("throws a redacted CalendarProviderError on other failures", async () => {
+      const mockFetch = createMockFetch({
+        apiHandler: async () => new Response("denied: raw body detail", { status: 403 }),
+      });
+
+      const adapter = new OutlookCalendarAdapter(dummyConfig, mockFetch as unknown as typeof fetch);
+
+      try {
+        await adapter.deleteEvent({ dentistId: "junior", eventId: "evt-1" });
+        expect.unreachable("should have thrown");
+      } catch (err: unknown) {
+        expect(err).toBeInstanceOf(CalendarProviderError);
+        const providerError = err as CalendarProviderError;
+        expect(providerError.provider).toBe("outlook");
+        expect(providerError.operation).toBe("deleteEvent");
+        expect(providerError.status).toBe(403);
+        expect(providerError.message).not.toContain("raw body detail");
+      }
+    });
+  });
 });

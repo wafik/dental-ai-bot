@@ -12,7 +12,13 @@
     "lint": "oxlint src tests e2e",
     "format": "oxfmt --write src tests e2e",
     "test": "bun test tests",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "db:migrate": "bun scripts/migrate.ts",
+    "hash:admin-password": "bun scripts/hash-admin-password.ts",
+    "import:google-service-account": "bun scripts/import-google-service-account.ts",
+    "e2e:server": "bun scripts/e2e-server.ts",
+    "build:slides": "bun slides/compile.js",
+    "build:pdf": "bun scripts/generate-pdf.js"
   },
   "dependencies": {
     "class-variance-authority": "^0.7.1",
@@ -37,6 +43,7 @@
     "@types/react-dom": "19.3.0",
     "oxfmt": "0.74.0",
     "oxlint": "1.89.0",
+    "pptxgenjs": "^4.0.1",
     "shadcn": "4.22.1",
     "tailwindcss": "4.3.3",
     "typescript": "7.0.2"

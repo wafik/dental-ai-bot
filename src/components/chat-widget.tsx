@@ -10,10 +10,28 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Field, FieldError } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Send, Bot, User, Sparkles, Loader2 } from "lucide-react";
+import {
+  Send,
+  Bot,
+  User,
+  Sparkles,
+  Loader2,
+  Volume2,
+  VolumeX,
+  Play,
+  RotateCcw,
+} from "lucide-react";
+import {
+  CHAT_USER_MESSAGE_MAX_LENGTH,
+  chatMessageSchema,
+  collectFieldErrors,
+} from "@/utils/form-validation";
+import { selectRecentChatHistory } from "@/utils/chat-history";
 import type { LLMChatMessage } from "@/providers/ai/llm-provider";
+import { ChatTtsPlayer, type ChatTtsStatus } from "@/features/tts/chat-tts-player";
 
 export type ChatWidgetProps = {
   initialPrompt?: string;
@@ -37,7 +55,28 @@ export function ChatWidget({ initialPrompt, onAppointmentBooked }: ChatWidgetPro
   ]);
   const [input, setInput] = useState(initialPrompt || "");
   const [loading, setLoading] = useState(false);
+  const [autoReadReplies, setAutoReadReplies] = useState(true);
+  const autoReadRepliesRef = useRef(true);
+  const [ttsStatuses, setTtsStatuses] = useState<Record<string, ChatTtsStatus>>({});
   const scrollRef = useRef<HTMLDivElement>(null);
+  const ttsPlayerRef = useRef<ChatTtsPlayer | null>(null);
+
+  if (!ttsPlayerRef.current) {
+    ttsPlayerRef.current = new ChatTtsPlayer({
+      onStatusChange: (messageId, status) => {
+        setTtsStatuses((previous) => {
+          if (!status) {
+            const next = { ...previous };
+            delete next[messageId];
+            return next;
+          }
+          return { ...previous, [messageId]: status };
+        });
+      },
+    });
+  }
+
+  const messageError = collectFieldErrors(chatMessageSchema, { message: input }).message;
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -51,11 +90,15 @@ export function ChatWidget({ initialPrompt, onAppointmentBooked }: ChatWidgetPro
     }
   }, [initialPrompt]);
 
+  useEffect(() => () => ttsPlayerRef.current?.stop(), []);
+
   const handleSend = async (messageText?: string) => {
     const textToSend = messageText || input;
-    if (!textToSend.trim() || loading) return;
+    const normalizedText = textToSend.trim();
+    if (loading || !chatMessageSchema.safeParse({ message: normalizedText }).success) return;
+    if (!normalizedText) return;
 
-    const userMessage: LLMChatMessage = { role: "user", content: textToSend.trim() };
+    const userMessage: LLMChatMessage = { role: "user", content: normalizedText };
     const updatedMessages: LLMChatMessage[] = [...messages, userMessage];
 
     setMessages(updatedMessages);
@@ -66,7 +109,7 @@ export function ChatWidget({ initialPrompt, onAppointmentBooked }: ChatWidgetPro
       const res = await fetch("/api/v1/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: updatedMessages }),
+        body: JSON.stringify({ messages: selectRecentChatHistory(updatedMessages) }),
       });
 
       if (!res.ok) {
@@ -75,8 +118,12 @@ export function ChatWidget({ initialPrompt, onAppointmentBooked }: ChatWidgetPro
       }
 
       const data = await res.json();
-      if (data.success && data.reply) {
+      if (data.success && typeof data.reply === "string" && data.reply.trim()) {
+        const replyId = `reply-${updatedMessages.length}`;
         setMessages((prev) => [...prev, { role: "assistant", content: data.reply }]);
+        if (autoReadRepliesRef.current) {
+          void ttsPlayerRef.current?.play(replyId, data.reply);
+        }
 
         if (
           data.reply.toLowerCase().includes("confirmed") ||
@@ -102,7 +149,7 @@ export function ChatWidget({ initialPrompt, onAppointmentBooked }: ChatWidgetPro
   return (
     <Card className="flex flex-col h-[600px] w-full">
       <CardHeader className="pb-3 border-b">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-2">
             <div className="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center">
               <Bot className="w-4 h-4" />
@@ -119,6 +166,24 @@ export function ChatWidget({ initialPrompt, onAppointmentBooked }: ChatWidgetPro
               </CardDescription>
             </div>
           </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            aria-pressed={autoReadReplies}
+            aria-label={autoReadReplies ? "Disable auto-read replies" : "Enable auto-read replies"}
+            onClick={() => {
+              const next = !autoReadRepliesRef.current;
+              autoReadRepliesRef.current = next;
+              setAutoReadReplies(next);
+              if (!next) {
+                ttsPlayerRef.current?.stop();
+              }
+            }}
+          >
+            {autoReadReplies ? <Volume2 aria-hidden="true" /> : <VolumeX aria-hidden="true" />}
+            <span className="hidden sm:inline">Auto-read {autoReadReplies ? "on" : "off"}</span>
+          </Button>
         </div>
       </CardHeader>
 
@@ -138,14 +203,46 @@ export function ChatWidget({ initialPrompt, onAppointmentBooked }: ChatWidgetPro
                 {isUser ? <User className="w-3.5 h-3.5" /> : <Bot className="w-3.5 h-3.5" />}
               </div>
 
-              <div
-                className={`rounded-lg px-3 py-2 text-xs max-w-[80%] whitespace-pre-wrap leading-relaxed shadow-xs ${
-                  isUser
-                    ? "bg-primary text-primary-foreground font-normal"
-                    : "bg-muted/50 border text-foreground"
-                }`}
-              >
-                {m.content}
+              <div className="flex max-w-[80%] flex-col items-start gap-1">
+                <div
+                  className={`rounded-lg px-3 py-2 text-xs whitespace-pre-wrap leading-relaxed shadow-xs ${
+                    isUser
+                      ? "bg-primary text-primary-foreground font-normal"
+                      : "bg-muted/50 border text-foreground"
+                  }`}
+                >
+                  {m.content}
+                </div>
+                {!isUser &&
+                index > 0 &&
+                typeof m.content === "string" &&
+                !m.content.startsWith("⚠️ Sorry,") ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="xs"
+                    aria-label={
+                      ttsStatuses[`reply-${index}`] === "loading"
+                        ? "Preparing audio"
+                        : ttsStatuses[`reply-${index}`] === "playing"
+                          ? "Speaking reply"
+                          : "Play reply aloud"
+                    }
+                    disabled={ttsStatuses[`reply-${index}`] === "loading"}
+                    onClick={() =>
+                      void ttsPlayerRef.current?.play(`reply-${index}`, m.content as string)
+                    }
+                  >
+                    {ttsStatuses[`reply-${index}`] === "loading" ? (
+                      <Loader2 className="animate-spin" aria-hidden="true" />
+                    ) : ttsStatuses[`reply-${index}`] === "error" ? (
+                      <RotateCcw aria-hidden="true" />
+                    ) : (
+                      <Play aria-hidden="true" />
+                    )}
+                    {ttsStatuses[`reply-${index}`] === "error" ? "Try again" : "Read aloud"}
+                  </Button>
+                ) : null}
               </div>
             </div>
           );
@@ -174,30 +271,39 @@ export function ChatWidget({ initialPrompt, onAppointmentBooked }: ChatWidgetPro
           ))}
         </div>
 
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            handleSend();
-          }}
-          className="flex w-full items-center gap-2"
-        >
-          <Input
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder="Type your question or booking request..."
-            className="text-xs h-9"
-            disabled={loading}
-          />
-          <Button
-            type="submit"
-            size="sm"
-            className="h-9 px-3 gap-1"
-            disabled={loading || !input.trim()}
+        <Field data-invalid={Boolean(messageError)} className="gap-1">
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              handleSend();
+            }}
+            className="flex w-full items-center gap-2"
           >
-            <Send className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline text-xs">Send</span>
-          </Button>
-        </form>
+            <Input
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              placeholder="Type your question or booking request..."
+              className="text-xs h-9"
+              maxLength={CHAT_USER_MESSAGE_MAX_LENGTH}
+              disabled={loading}
+              aria-invalid={Boolean(messageError)}
+              aria-describedby={messageError ? "chat-message-error" : undefined}
+              aria-label="Message"
+            />
+            <Button
+              type="submit"
+              size="sm"
+              className="h-9 px-3 gap-1"
+              disabled={loading || !input.trim()}
+            >
+              <Send className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline text-xs">Send</span>
+            </Button>
+          </form>
+          <FieldError id="chat-message-error" className="text-[11px]">
+            {messageError}
+          </FieldError>
+        </Field>
       </CardFooter>
     </Card>
   );

@@ -1,7 +1,28 @@
 import { describe, expect, it } from "bun:test";
+import type {
+  BusyInterval,
+  CalendarEventInput,
+  CalendarProvider,
+  CreatedCalendarEvent,
+} from "../src/providers/calendar/calendar-provider";
+import type { AppointmentRepository } from "../src/repository/appointment-repository";
 import { InMemoryAppointmentRepository } from "../src/repository/in-memory-appointment-repository";
 import { AppointmentService } from "../src/services/appointment-service";
 import { createAppointmentsHandlers } from "../src/app/api/v1/appointments/route";
+
+class FailingCalendarProvider implements CalendarProvider {
+  async getBusyIntervals(): Promise<BusyInterval[]> {
+    return [];
+  }
+
+  async createEvent(_input: CalendarEventInput): Promise<CreatedCalendarEvent> {
+    throw new Error("upstream calendar unavailable: secret-token");
+  }
+
+  async deleteEvent(): Promise<void> {
+    throw new Error("upstream calendar unavailable: secret-token");
+  }
+}
 
 describe("Appointments API Route Handlers", () => {
   const repository = new InMemoryAppointmentRepository();
@@ -38,7 +59,85 @@ describe("Appointments API Route Handlers", () => {
       expect(json.success).toBe(true);
       expect(json.date).toBe("2026-10-28");
       expect(json.appointments.length).toBeGreaterThanOrEqual(1);
-      expect(json.appointments[0].patientName).toBe("John Doe");
+      expect(json.appointments[0].startTime).toBe("09:00");
+    });
+
+    it("never exposes patient identity on the public listing", async () => {
+      await service.bookAppointment({
+        serviceCode: "A",
+        dentistId: "junior",
+        date: "2026-10-29",
+        startTime: "09:00",
+        patientName: "Private Patient",
+        patientPhone: "+628999888777",
+      });
+
+      const res = await GET(new Request("http://localhost/api/v1/appointments?date=2026-10-29"));
+      const text = await res.text();
+
+      expect(text).not.toContain("Private Patient");
+      expect(text).not.toContain("+628999888777");
+      expect(text).not.toContain("patientName");
+      expect(text).not.toContain("patientPhone");
+    });
+
+    it("hides pending and failed reservations from the public listing", async () => {
+      const internalRepository = new InMemoryAppointmentRepository();
+      await internalRepository.create({
+        id: "apt-pending",
+        patientName: "Pending Patient",
+        patientPhone: "+62811111111",
+        serviceCode: "A",
+        dentistId: "junior",
+        date: "2026-10-30",
+        startTime: "09:00",
+        endTime: "10:00",
+        status: "pending",
+        createdAt: "2026-10-26T00:00:00.000Z",
+        updatedAt: "2026-10-26T00:00:00.000Z",
+      });
+      await internalRepository.create({
+        id: "apt-failed",
+        patientName: "Failed Patient",
+        patientPhone: "+62811111112",
+        serviceCode: "A",
+        dentistId: "junior",
+        date: "2026-10-30",
+        startTime: "10:00",
+        endTime: "11:00",
+        status: "failed",
+        createdAt: "2026-10-26T00:00:00.000Z",
+        updatedAt: "2026-10-26T00:00:00.000Z",
+      });
+      const handlers = createAppointmentsHandlers({ repository: internalRepository });
+
+      const res = await handlers.GET(
+        new Request("http://localhost/api/v1/appointments?date=2026-10-30"),
+      );
+      expect(res.status).toBe(200);
+
+      const json = await res.json();
+      expect(json.success).toBe(true);
+      expect(json.totalConfirmed).toBe(0);
+      expect(json.appointments).toHaveLength(0);
+    });
+
+    it("redacts internal failures instead of echoing configuration errors", async () => {
+      const brokenRepository = {
+        find: async () => {
+          throw new Error("Both Google Calendar and Outlook must be configured.");
+        },
+      } as unknown as AppointmentRepository;
+      const handlers = createAppointmentsHandlers({ repository: brokenRepository });
+
+      const res = await handlers.GET(
+        new Request("http://localhost/api/v1/appointments?date=2026-10-30"),
+      );
+      expect(res.status).toBe(500);
+
+      const text = await res.text();
+      expect(text).toContain("Internal server error");
+      expect(text).not.toContain("Google Calendar");
     });
   });
 
@@ -103,6 +202,49 @@ describe("Appointments API Route Handlers", () => {
       expect(json.success).toBe(true);
       expect(json.appointment.patientName).toBe("Charlie Brown");
       expect(json.appointment.status).toBe("confirmed");
+    });
+
+    it("returns HTTP 201 with a pending appointment when calendar synchronization fails", async () => {
+      const failingRepository = new InMemoryAppointmentRepository();
+      const failingService = new AppointmentService(failingRepository, {
+        google: new FailingCalendarProvider(),
+      });
+      const handlers = createAppointmentsHandlers({
+        repository: failingRepository,
+        appointmentService: failingService,
+      });
+
+      const req = new Request("http://localhost/api/v1/appointments", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          patientName: "Sync Failure",
+          patientPhone: "+62812345678",
+          serviceCode: "A",
+          dentistId: "senior-2",
+          date: "2026-10-29",
+          startTime: "09:00",
+        }),
+      });
+
+      const res = await handlers.POST(req);
+      // The reservation exists, so the write is accepted; the appointment is
+      // reported as pending rather than presented as fully synchronized.
+      expect(res.status).toBe(201);
+
+      const json = await res.json();
+      expect(json.success).toBe(true);
+      expect(json.appointment.status).toBe("pending");
+      expect(JSON.stringify(json)).not.toContain("secret-token");
+
+      // The pending reservation keeps the slot blocked until reconciliation.
+      const stored = await failingRepository.find({ date: "2026-10-29" });
+      expect(stored).toHaveLength(1);
+      expect(stored[0]?.status).toBe("pending");
+
+      const syncs = await failingRepository.getCalendarSyncs(json.appointment.id);
+      expect(syncs).toHaveLength(1);
+      expect(syncs[0]).toMatchObject({ provider: "google", status: "pending", attempts: 1 });
     });
   });
 });

@@ -40,6 +40,14 @@ describe("SlidingWindowRateLimiter", () => {
     expect(blocked.resetMs).toBeGreaterThan(0);
   });
 
+  it("does not retain more than 10,000 active client identifiers", () => {
+    const limiter = new SlidingWindowRateLimiter({ maxRequests: 1, windowMs: 60_000 });
+    for (let i = 0; i < 10_000; i += 1) {
+      expect(limiter.check(`client-${i}`).allowed).toBe(true);
+    }
+    expect(limiter.check("client-over-capacity").allowed).toBe(false);
+  });
+
   it("tracks different client identifiers independently", () => {
     const limiter = new SlidingWindowRateLimiter({
       maxRequests: 1,

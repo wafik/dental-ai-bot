@@ -7,6 +7,7 @@ import {
   type BookAppointmentInput,
   type CancelAppointmentInput,
 } from "../domain/appointment";
+import type { AppointmentCalendarSync } from "../domain/calendar-sync";
 import { DENTISTS, SERVICES, type DentalService, type Dentist } from "../domain/clinic";
 import {
   findAvailableSlots,
@@ -14,8 +15,17 @@ import {
   type Appointment,
   type WorkingHours,
 } from "../domain/scheduling";
-import type { CalendarProvider } from "../providers/calendar/calendar-provider";
+import type { CalendarProviderSet } from "../providers/calendar/calendar-provider";
 import type { AppointmentRepository } from "../repository/appointment-repository";
+import {
+  attemptBooking,
+  attemptCancellation,
+  bookingEventInput,
+  collectBusyIntervals,
+  convergeAppointment,
+  providerEntries,
+  recordSyncOutcome,
+} from "./calendar-sync-service";
 import {
   DEFAULT_CLINIC_TIMEZONE,
   localToUtcIso,
@@ -49,33 +59,38 @@ function toTime(minutes: number): string {
   return `${hours}:${mins}`;
 }
 
-class NoopCalendarProvider implements CalendarProvider {
-  async getBusyIntervals(): Promise<never[]> {
-    return [];
-  }
-  async createEvent(input: {
-    start: string;
-    end: string;
-  }): Promise<{ id: string; start: string; end: string }> {
-    return {
-      id: `local-evt-${Date.now()}`,
-      start: input.start,
-      end: input.end,
-    };
-  }
+function pendingSync(
+  appointmentId: string,
+  provider: AppointmentCalendarSync["provider"],
+  operation: AppointmentCalendarSync["operation"],
+  now: string,
+): AppointmentCalendarSync {
+  return {
+    appointmentId,
+    provider,
+    operation,
+    status: "pending",
+    attempts: 0,
+    nextAttemptAt: now,
+    updatedAt: now,
+  };
 }
 
 export class AppointmentService {
-  private readonly calendarProvider: CalendarProvider;
+  private readonly calendarProviders: CalendarProviderSet;
   private readonly workingHours: WorkingHours;
   private readonly timeZone: string;
 
+  /**
+   * An empty provider set is explicit local-only mode (the `none` setting).
+   * Every other configuration resolves both Google and Outlook at runtime.
+   */
   constructor(
     private readonly repository: AppointmentRepository,
-    calendarProvider?: CalendarProvider,
+    calendarProviders: CalendarProviderSet = {},
     config?: AppointmentServiceConfig,
   ) {
-    this.calendarProvider = calendarProvider ?? new NoopCalendarProvider();
+    this.calendarProviders = calendarProviders;
     this.workingHours = config?.workingHours ?? DEFAULT_WORKING_HOURS;
     this.timeZone = config?.timeZone ?? DEFAULT_CLINIC_TIMEZONE;
   }
@@ -111,10 +126,11 @@ export class AppointmentService {
       return [];
     }
 
-    // 1. Fetch confirmed internal appointments from repository for the date
+    // 1. Fetch active internal appointments (pending reservations, confirmed
+    //    bookings, and in-flight cancellations all occupy the dentist's time)
     const repoAppointments = await this.repository.find({
       date: input.date,
-      status: "confirmed",
+      status: ["pending", "confirmed", "cancelling"],
     });
 
     const localRepoAppointments: Appointment[] = repoAppointments.map((rec) => ({
@@ -124,13 +140,14 @@ export class AppointmentService {
       end: rec.endTime,
     }));
 
-    // 2. Fetch external calendar busy intervals for each candidate dentist
+    // 2. Fetch external calendar busy intervals for each candidate dentist from
+    //    every configured provider; a slot is free only when all agree.
     const calendarAppointments: Appointment[] = [];
     const dayStartUtc = localToUtcIso(input.date, "00:00", this.timeZone);
     const dayEndUtc = localToUtcIso(input.date, "23:59", this.timeZone);
 
     for (const dentist of candidateDentists) {
-      const busyIntervals = await this.calendarProvider.getBusyIntervals({
+      const busyIntervals = await collectBusyIntervals(this.calendarProviders, {
         dentistId: dentist.id,
         start: dayStartUtc,
         end: dayEndUtc,
@@ -164,6 +181,11 @@ export class AppointmentService {
 
   /**
    * Validates and books a new appointment.
+   *
+   * The slot is reserved locally first. When external calendars are configured,
+   * the booking is confirmed only after every provider accepted the event; a
+   * partial or ambiguous outcome leaves the appointment `pending` with durable
+   * per-provider retry state instead of reporting a false success.
    */
   async bookAppointment(input: BookAppointmentInput): Promise<AppointmentRecord> {
     const service = SERVICES.find((s) => s.code === input.serviceCode);
@@ -224,21 +246,11 @@ export class AppointmentService {
       );
     }
 
-    // Convert local start & end to UTC for external calendar
-    const startUtc = localToUtcIso(input.date, input.startTime, this.timeZone);
-    const endUtc = localToUtcIso(input.date, endTime, this.timeZone);
-
-    // Sync with external calendar
-    const createdEvent = await this.calendarProvider.createEvent({
-      dentistId: input.dentistId,
-      summary: `Dental Appointment: ${service.name} - ${input.patientName}`,
-      description: `Patient: ${input.patientName} (${input.patientPhone})\nService: ${service.name} (${service.code})`,
-      start: startUtc,
-      end: endUtc,
-    });
-
+    // Reserve the slot atomically before touching external calendars. The
+    // reservation is what closes the race between the availability check above
+    // and the write below; the pre-check only rejects obviously busy slots fast.
     const now = new Date().toISOString();
-    const newRecord: AppointmentRecord = {
+    const reserved = await this.repository.reserveIfAvailable({
       id: randomUUID(),
       patientName: input.patientName,
       patientPhone: input.patientPhone,
@@ -247,17 +259,38 @@ export class AppointmentService {
       date: input.date,
       startTime: input.startTime,
       endTime,
-      status: "confirmed",
-      calendarEventId: createdEvent.id,
+      status: "pending",
       createdAt: now,
       updatedAt: now,
-    };
+    });
 
-    return this.repository.create(newRecord);
+    const entries = providerEntries(this.calendarProviders);
+    if (entries.length === 0) {
+      // No external calendar is configured for this deployment.
+      return this.repository.confirm(reserved.id);
+    }
+
+    // Persist the intent first so a crash mid-sync leaves durable retry state.
+    const syncs = entries.map(([provider]) => pendingSync(reserved.id, provider, "book", now));
+    await this.repository.saveCalendarSyncs(syncs);
+
+    const eventInput = bookingEventInput(reserved, this.timeZone);
+    await Promise.all(
+      entries.map(async ([providerName, provider]) => {
+        const sync = syncs.find((candidate) => candidate.provider === providerName)!;
+        const outcome = await attemptBooking(provider, providerName, eventInput);
+        await recordSyncOutcome(this.repository, sync, outcome);
+      }),
+    );
+
+    await convergeAppointment(this.repository, reserved.id);
+    return (await this.repository.findById(reserved.id)) ?? reserved;
   }
 
   /**
-   * Cancels an existing appointment by ID idempotently.
+   * Cancels an existing appointment idempotently. The appointment stays
+   * `cancelling` (and keeps its slot blocked) until every configured calendar
+   * has removed its event; a repeated request resumes the same work.
    */
   async cancelAppointment(input: CancelAppointmentInput): Promise<AppointmentRecord> {
     const existing = await this.repository.findById(input.appointmentId);
@@ -270,6 +303,66 @@ export class AppointmentService {
     }
 
     const now = new Date().toISOString();
-    return this.repository.updateStatus(input.appointmentId, "cancelled", now);
+    const entries = providerEntries(this.calendarProviders);
+    if (entries.length === 0) {
+      return this.repository.updateStatus(input.appointmentId, "cancelled", now);
+    }
+
+    const current =
+      existing.status === "cancelling"
+        ? existing
+        : await this.repository.updateStatus(input.appointmentId, "cancelling");
+
+    const existingSyncs = await this.repository.getCalendarSyncs(input.appointmentId);
+
+    await Promise.all(
+      entries.map(async ([providerName, provider]) => {
+        const sync = existingSyncs.find((candidate) => candidate.provider === providerName);
+        if (sync?.operation === "cancel" && sync.status === "succeeded") {
+          return;
+        }
+
+        // Google accepts a caller-supplied event ID, so even an ambiguous create
+        // has a deterministic ID that can be deleted idempotently. A Graph event
+        // ID is assigned by the server and only known once creation succeeded.
+        const eventId =
+          sync?.eventId ??
+          (providerName === "google" ? bookingEventInput(existing).idempotencyKey : undefined);
+
+        if (!eventId) {
+          const unresolved = sync?.status === "needs_manual_reconciliation";
+          const status = unresolved ? "needs_manual_reconciliation" : "succeeded";
+          const lastError = unresolved ? (sync.lastError ?? null) : null;
+          if (sync) {
+            await this.repository.updateCalendarSync(input.appointmentId, providerName, {
+              operation: "cancel",
+              status,
+              lastError,
+            });
+          } else {
+            // No tracked create exists for this provider; record the completed
+            // cancellation so convergence can finish.
+            await this.repository.saveCalendarSyncs([
+              { ...pendingSync(input.appointmentId, providerName, "cancel", now), status },
+            ]);
+          }
+          return;
+        }
+
+        const cancelSync = await this.repository.updateCalendarSync(
+          input.appointmentId,
+          providerName,
+          { operation: "cancel", status: "pending", lastError: null, nextAttemptAt: now },
+        );
+        const outcome = await attemptCancellation(provider, providerName, {
+          dentistId: current.dentistId,
+          eventId,
+        });
+        await recordSyncOutcome(this.repository, cancelSync, outcome);
+      }),
+    );
+
+    await convergeAppointment(this.repository, input.appointmentId);
+    return (await this.repository.findById(input.appointmentId)) ?? current;
   }
 }

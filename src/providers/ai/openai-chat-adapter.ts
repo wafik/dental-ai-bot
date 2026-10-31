@@ -64,6 +64,9 @@ export class OpenAIChatAdapter implements LLMProvider {
     const payload: Record<string, unknown> = {
       model: this.model,
       messages: formattedMessages,
+      // Explicit false: some OpenAI-compatible gateways answer with SSE when
+      // the field is omitted, which breaks the JSON parse below.
+      stream: false,
     };
 
     if (request.tools && request.tools.length > 0) {

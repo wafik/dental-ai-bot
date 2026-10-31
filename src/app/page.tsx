@@ -68,6 +68,9 @@ export default function Home() {
               <Sparkles className="w-3 h-3 text-primary" />
               <span>AI Receptionist Ready</span>
             </Badge>
+            <Button variant="ghost" size="sm" className="text-xs" asChild>
+              <a href="/admin">Admin</a>
+            </Button>
           </div>
         </div>
       </header>
@@ -174,8 +177,10 @@ export default function Home() {
                   Voice AI Architecture
                 </h3>
                 <p className="text-muted-foreground leading-relaxed">
-                  Operates over bidirectional WebRTC with the OpenAI Realtime API. Your microphone
-                  audio is streamed directly to the model, and spoken responses play with zero lag.
+                  Streams microphone audio to the configured realtime voice provider over a
+                  WebSocket — Gemini Live, or any OpenAI Realtime-compatible endpoint such as a
+                  self-hosted speech-to-speech server. With Gemini the server mints a single-use
+                  token, so the master API key never reaches the browser.
                 </p>
                 <div className="border-t pt-2 space-y-1.5 text-muted-foreground">
                   <div className="font-medium text-foreground">Backend Safety Guardrails:</div>

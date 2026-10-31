@@ -44,6 +44,11 @@ export type SettingsRepository = {
   ): Promise<DentistCalendarMappingRecord[]>;
 
   /**
+   * Gets every mapping including inactive rows, for admin display.
+   */
+  getAllDentistCalendarMappings(): Promise<DentistCalendarMappingRecord[]>;
+
+  /**
    * Creates or updates a dentist calendar mapping.
    */
   upsertDentistCalendarMapping(
