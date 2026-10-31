@@ -64,6 +64,10 @@ export const adminLoginSchema = z.object({
 /**
  * A blank calendar ID is valid: the runtime treats it as "not configured" and
  * the settings route uses it to clear a mapping.
+ *
+ * Google IDs are email-like; Microsoft Graph IDs are long opaque base64url
+ * strings with no `@`. Both are accepted, so the rule only rejects values that
+ * are clearly neither.
  */
 export const calendarMappingSchema = z.object({
   calendarId: z
@@ -71,8 +75,8 @@ export const calendarMappingSchema = z.object({
     .trim()
     .max(512, "Calendar ID is too long")
     .refine(
-      (value) => value === "" || value.includes("@"),
-      "Use the calendar's email-like ID, e.g. clinic@gmail.com",
+      (value) => value === "" || value.includes("@") || /^[A-Za-z0-9_=-]{16,}$/.test(value),
+      "Use the calendar's ID, e.g. clinic@gmail.com or the Outlook calendar's Graph ID",
     ),
 });
 

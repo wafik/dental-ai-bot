@@ -82,12 +82,20 @@ export function CalendarSettingsSection({
             the calendar&apos;s settings and paste it below.
           </p>
           <p className="mt-1">
-            A Calendar ID is usually an email address, for example{" "}
+            A Google Calendar ID is usually an email address, for example{" "}
             <code className="rounded bg-muted px-1 py-0.5 text-xs">clinic@gmail.com</code> or{" "}
             <code className="rounded bg-muted px-1 py-0.5 text-xs">
               abc123@group.calendar.google.com
             </code>
             .
+          </p>
+          <p className="mt-1">
+            An Outlook calendar ID is a long opaque string found via{" "}
+            <code className="rounded bg-muted px-1 py-0.5 text-xs">
+              GET graph.microsoft.com/v1.0/me/calendars
+            </code>{" "}
+            (the <code className="rounded bg-muted px-1 py-0.5 text-xs">id</code> field). Outlook
+            does not show it in its own settings screen.
           </p>
         </div>
 
@@ -119,7 +127,11 @@ export function CalendarSettingsSection({
                         <Input
                           id={inputId}
                           value={value}
-                          placeholder="e.g. clinic@gmail.com"
+                          placeholder={
+                            field.key === "googleCalendarId"
+                              ? "e.g. clinic@gmail.com"
+                              : "Graph calendar ID"
+                          }
                           disabled={disabled}
                           onChange={(event) =>
                             onMappingChange(id, { [field.key]: event.target.value })

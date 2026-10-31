@@ -57,6 +57,15 @@ describe("calendarMappingSchema", () => {
     ).toBe(true);
   });
 
+  it("accepts a Microsoft Graph calendar ID, which has no @", () => {
+    // Outlook calendar IDs are opaque base64url strings; requiring an "@" here
+    // made the admin form reject every real Outlook mapping.
+    const graphId = "AAMkADQ0NTk3NTQ5LTIyYzItNDg2Yi1hZTgwLWQ5ZDRhNGRhZmYzNwBGAAAAAAC7Yz";
+    expect(calendarMappingSchema.safeParse({ calendarId: graphId }).success).toBe(true);
+    expect(calendarMappingSchema.safeParse({ calendarId: `${graphId}==` }).success).toBe(true);
+    expect(calendarMappingSchema.safeParse({ calendarId: `${graphId}_-` }).success).toBe(true);
+  });
+
   it("rejects a value that cannot be a calendar ID", () => {
     const result = calendarMappingSchema.safeParse({ calendarId: "not-an-id" });
     expect(result.success).toBe(false);
